@@ -1,3 +1,4 @@
+import { newProject } from '@/lib/types';
 import { EventPlanFields } from "@/components/EventPlan";
 import { t as tr } from "@/lib/i18n";
 import { useState, type FormEvent } from "react";
@@ -7,6 +8,17 @@ import { Button } from "@/components/ui/button";
 import { errorText } from "@/lib/utils";
 export default function Settings({ p, update, notify }: PageProps) {
     const [busy, setBusy] = useState(false);
+    const [resetRevision, setResetRevision] = useState(0);
+    async function reset() {
+        if (!window.confirm(tr('重置当前赛事？将清空全部队伍、裁判、场地、赛程、成绩、裁判评分和草稿，仅保留赛事名称。此操作无法撤销，请先备份。'))) return;
+        setBusy(true);
+        try {
+            await update({...newProject(p.name), id: p.id, createdAt: p.createdAt});
+            setResetRevision(v => v + 1);
+            notify(tr('赛事已重置'));
+        } catch (e) { notify(errorText(e), true); }
+        finally { setBusy(false); }
+    }
     async function save(e: FormEvent<HTMLFormElement>) {
         e.preventDefault();
         const f = new FormData(e.currentTarget);
@@ -59,9 +71,9 @@ export default function Settings({ p, update, notify }: PageProps) {
         }
     }
     return (<>
-      <PageTitle eyebrow="TOURNAMENT SETTINGS" title={tr("赛事设置")} description={tr("为这场赛事，设定合适的规则。")}/>
+      <PageTitle eyebrow="TOURNAMENT SETTINGS" title={tr("赛事设置")} description={tr("为这场赛事，设定合适的规则。")} actions={<Button variant="outline" className="reset-event-button" disabled={busy} onClick={() => void reset()}>{tr("重置赛事")}</Button>}/>
       <Panel title={tr("基本信息与裁判安排")} description={tr("新设置在下一次生成或分配时生效。")}>
-        <form className="settings-form entity-form" key={p.id} onSubmit={(e) => void save(e)}>
+        <form className="settings-form entity-form" key={`${p.id}-${resetRevision}`} onSubmit={(e) => void save(e)}>
           <label>
             {tr("赛事名称")}
             <input name="name" required defaultValue={p.name} maxLength={150}/>

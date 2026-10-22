@@ -2410,3 +2410,9 @@ th,td{white-space:normal;overflow-wrap:anywhere;word-break:normal;}
 .score-room-toggle { display:inline-flex; align-items:center; gap:10px; cursor:pointer; padding:0; font:inherit; }
 .score-room-toggle span { color:var(--muted); font-size:18px; }
 .compact-score-room:has(.compact-score-grid[hidden]) .compact-score-toolbar { border-bottom:0; }
+
+/* Keep the last controls clear of the viewport edge and device safe area. */
+.main-content { padding-bottom:calc(80px + env(safe-area-inset-bottom, 0px)); }
+html { scroll-padding-bottom:calc(32px + env(safe-area-inset-bottom, 0px)); }
+.reset-event-button { color:#b42318; border-color:#e6b0aa; }
+:root[data-theme=dark] .reset-event-button { color:#ef9b91; border-color:#6d3834; }

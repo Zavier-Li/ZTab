@@ -480,5 +480,9 @@
   "第{0}名": "Rank {0}",
   "第{0}轮": "Round {0}",
   "例：4132": "e.g. 4132",
-  "按 Enter 录入成绩": "Press Enter to submit results"
+  "按 Enter 录入成绩": "Press Enter to submit results",
+  "完赛": "Completed",
+  "重置赛事": "Reset tournament",
+  "赛事已重置": "Tournament reset",
+  "重置当前赛事？将清空全部队伍、裁判、场地、赛程、成绩、裁判评分和草稿，仅保留赛事名称。此操作无法撤销，请先备份。": "Reset this tournament? All teams, judges, venues, draws, results, ballots and drafts will be deleted. Only the tournament name is kept. This cannot be undone; export a backup first."
 }

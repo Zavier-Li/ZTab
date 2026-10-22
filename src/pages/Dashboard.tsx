@@ -8,6 +8,7 @@ import { completeRound } from "@/lib/types";
 import { exportJSON } from "@/lib/export";
 export default function Dashboard({ p, go }: PageProps) {
     const teams = p.teams.filter((t) => t.active).length, judges = p.judges.filter((j) => j.active).length, venues = p.venues.filter((v) => v.active).length, completed = p.rounds.filter(completeRound).length;
+    const finished = p.rounds.length > 0 && completed === p.rounds.length;
     const checks = [
         {
             label: tr("导入参赛队伍"),
@@ -31,7 +32,7 @@ export default function Dashboard({ p, go }: PageProps) {
     const ranked = teamStandings(p)
         .filter((t) => t.rounds)
         .slice(0, 5);
-    const next = p.rounds.some((r) => !completeRound(r))
+    const next = finished ? "standings" : p.rounds.some((r) => !completeRound(r))
         ? "results"
         : teams
             ? "draw"
@@ -42,7 +43,7 @@ export default function Dashboard({ p, go }: PageProps) {
         <div>
           <div className="event-meta">
             <Badge tone={p.rounds.length ? "green" : "gray"}>
-              {p.rounds.length ? tr("赛事进行中") : tr("赛事筹备中")}
+              {finished ? tr("完赛") : p.rounds.length ? tr("赛事进行中") : tr("赛事筹备中")}
             </Badge>
             <span>
               BP / {p.randomMeta ? tr("四轮随机编排") : tr("成绩配对模式")}
@@ -52,7 +53,7 @@ export default function Dashboard({ p, go }: PageProps) {
           <></>
         </div>
         <Button onClick={() => go(next)}>
-          {next === "results"
+          {next === "standings" ? tr("查看排名") : next === "results"
             ? tr("录入本轮成绩")
             : next === "teams"
                 ? tr("添加参赛队伍")
