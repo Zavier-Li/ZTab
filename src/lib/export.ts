@@ -223,10 +223,8 @@ export async function exportScheduleZIP(p: Project) {
   });
   const report = validateSchedule(
     draws,
-    teams.map((t) => t.name), teams.map(t => t.isStrong), meta.options?.maxMeetings ?? 2,
+    teams.map((t) => t.name), teams.map(t => t.isStrong),
   );
-  if (report.max_pair_meetings > (meta.options?.maxMeetings??2))
-    throw new Error("交手次数超过设定上限");
   const [{ default: JSZip }, XLSX] = await Promise.all([
     import("jszip"),
     import("xlsx"),

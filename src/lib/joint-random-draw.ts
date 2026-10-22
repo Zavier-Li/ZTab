@@ -35,5 +35,5 @@ export function generateJointRandomDraw(seed:number, names:string[], mode:'rando
     candidates++;
     progress?.(0.4+0.6*(attempt+1)/samples);
   }
-  return {...generated,draws:best,report:validateSchedule(best,names,strong,options.maxMeetings),groupCandidates:candidates};
+  return {...generated,draws:best,report:validateSchedule(best,names,strong),groupCandidates:candidates};
 }

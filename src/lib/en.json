@@ -221,6 +221,11 @@
   "无需登录或业务服务器。请定期导出 JSON；清除浏览器站点数据会删除本地赛事，不同网址与端口的数据各自独立。": "No account or application server needed. Export JSON backups regularly. Clearing site data removes local tournaments. Different origins and ports store data separately.",
   "暂无正式成绩": "No official results yet",
   "最多交手次数": "Max meetings per pair",
+  "单对最高交手": "Most meetings between a pair",
+  "本次搜索未达到理论对手覆盖上界；当前排阵仍可使用。": "This search did not reach the theoretical opponent-coverage bound. The schedule is still usable.",
+  "近似最优方案": "Best approximate schedule found",
+  "每队四辩位各一次 · 每次生成自动随机": "Each team takes each position once · new random draw each time",
+  "本次搜索预算内未证明达到理论对手覆盖上界，已返回当前最优近似排阵。": "The search budget ended before proving the theoretical coverage bound; the best approximate schedule found is shown.",
   "有待处理的编排问题": "Draw issues need attention",
   "有效轮次": "Scored rounds",
   "有需要复核的回避提醒": "Conflict warnings to review",
@@ -525,9 +530,8 @@
   "强队标签已参与编排": "Strong-team tags applied",
   "启用场地数量不足": "Not enough active venues",
   "BP 四轮预排需要至少 4 支启用队伍，且队伍数为 4 的倍数": "Four-round BP draws need at least four active teams and a multiple of four teams",
-  "当前队伍数与交手上限无解：四轮每队需要 12 个对手席位": "The team count and meeting limit are infeasible: every team needs 12 opponent encounters",
   "严格同校回避无解：同校队伍数超过每轮赛场数": "Strict institution avoidance is infeasible: too many teams from one institution",
   "四轮预排需要不同队伍、队伍数为 4 的倍数及 4 轮对阵": "The draw needs distinct teams, a multiple of four teams, and four rounds",
   "每轮必须让全部队伍各上场一次，每场恰好 4 队": "Every team must appear once per round, four teams per room",
-  "未找到满足交手上限、强队分布和回避约束的排程，请调整参数或增加搜索强度": "No draw satisfying meeting limits, strong-team balance and avoidance was found; adjust options or increase search depth"
+  "未找到满足强队分布和回避约束的排程，请调整回避方式或增加搜索强度": "No schedule meeting the strong-team balance and avoidance constraints was found; adjust institution avoidance or search depth"
 }

@@ -27,7 +27,7 @@ type Edit = {
     value: string;
 };
 export default function Draw({ p, update, notify, go }: PageProps) {
-    const [options, setOptions] = useState<DrawOptions>(p.randomMeta?.options ? { ...p.randomMeta.options, schoolThreshold: 3 } : {...defaultDrawOptions, maxMeetings: Math.min(4, Math.max(2, Math.ceil(12 / Math.max(1, p.teams.filter(t => t.active).length - 1))))});
+    const [options, setOptions] = useState<DrawOptions>(p.randomMeta?.options ? { schoolAvoidance: p.randomMeta.options.schoolAvoidance, schoolThreshold: 3, searchDepth: p.randomMeta.options.searchDepth } : defaultDrawOptions);
     const scoresExist = hasAnyScores(p);
     const [strongOpen, setStrongOpen] = useState(false);
     const activeTeams = p.teams.filter(t => t.active);
@@ -39,7 +39,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
     }
     const mode = "random-new" as const;
     const [panelRoom, setPanelRoom] = useState<number | null>(null);
-    const [selected, setSelected] = useState(p.rounds.at(-1)?.no ?? 1), [randomOpen, setRandomOpen] = useState(false), [seed, setSeed] = useState(String(crypto.getRandomValues(new Uint32Array(1))[0])), [busy, setBusy] = useState(false), [progress, setProgress] = useState(0), [edit, setEdit] = useState<Edit | null>(null), [checking, setChecking] = useState(false), [exporting, setExporting] = useState(false);
+    const [selected, setSelected] = useState(p.rounds.at(-1)?.no ?? 1), [randomOpen, setRandomOpen] = useState(false), [busy, setBusy] = useState(false), [progress, setProgress] = useState(0), [edit, setEdit] = useState<Edit | null>(null), [checking, setChecking] = useState(false), [exporting, setExporting] = useState(false);
     const workerRef = useRef<Worker | null>(null), file = useRef<HTMLInputElement>(null);
     useEffect(() => () => workerRef.current?.terminate(), []);
     useEffect(() => {
@@ -52,7 +52,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
     let reportError = "";
     try {
         if (p.randomMeta)
-            report = validateSchedule(p.rounds.map((r) => r.rooms.map((room) => room.teamIds.map((id) => p.randomMeta!.teamOrder.indexOf(id)))), p.randomMeta.teamOrder.map((id) => p.teams.find((t) => t.id === id)!.name), p.randomMeta.teamOrder.map(id => !!p.randomMeta?.strongTeamIds?.includes(id)), p.randomMeta.options?.maxMeetings ?? 2);
+            report = validateSchedule(p.rounds.map((r) => r.rooms.map((room) => room.teamIds.map((id) => p.randomMeta!.teamOrder.indexOf(id)))), p.randomMeta.teamOrder.map((id) => p.teams.find((t) => t.id === id)!.name), p.randomMeta.teamOrder.map(id => !!p.randomMeta?.strongTeamIds?.includes(id)));
     }
     catch (e) {
         reportError = errorText(e);
@@ -98,11 +98,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             notify(tr("BP 预排队伍数须为 4 的倍数，当前 {0} 支", [teams.length]), true);
             return;
         }
-        const n = Number(seed);
-        if (!Number.isSafeInteger(n) || n < 0 || n > 4294967295) {
-            notify(tr("请输入 0–4294967295 范围内的整数种子"), true);
-            return;
-        }
+        const n = crypto.getRandomValues(new Uint32Array(1))[0];
         try {
             validateDrawOptions(options, teams.map(t => t.institution), teams.length);
             if (p.venues.filter(v => v.active).length < teams.length / 4) throw new Error(tr("需要 {0} 个启用场地，当前只有 {1} 个", [teams.length / 4, p.venues.filter(v => v.active).length]));
@@ -248,8 +244,6 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             if (next.randomMeta) {
                 const m = next.randomMeta;
                 const check = validateSchedule(next.rounds.map((r) => r.rooms.map((room) => room.teamIds.map((id) => m.teamOrder.indexOf(id)))), m.teamOrder.map((id) => next.teams.find((t) => t.id === id)!.name));
-                if (check.max_pair_meetings > (next.randomMeta.options?.maxMeetings ?? 2))
-                    throw new Error(tr("该调整会导致交手次数超过设定上限"));
             }
             if (r.bp) Object.assign(r.bp, analyzeBPRound(next, r));
             if (next.randomMeta) delete next.randomMeta.resources;
@@ -294,7 +288,6 @@ export default function Draw({ p, update, notify, go }: PageProps) {
     return (<>
       <PageTitle eyebrow="DRAW & PAIRING" title={tr("对阵编排")} description={tr("合理的对阵，让每一场比赛都值得期待。")} actions={<>{p.rounds.length > 0 && <ReportExport p={p} kind="draw" notify={notify} label={tr("整套赛程")}/>}
             <Button variant="outline" disabled={busy} onClick={() => {
-                setSeed(String(crypto.getRandomValues(new Uint32Array(1))[0]));
                 setRandomOpen(true);
             }}>
               <Shuffle size={16}/>
@@ -316,11 +309,9 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             <ShieldCheck size={24}/>
           </div>
           <div>
-            <strong>{report.coverage_optimal ? tr("对手覆盖最优已验证") : tr("四轮排程校验通过")}</strong>
+            <strong>{report.coverage_optimal ? tr("对手覆盖最优已验证") : tr("近似最优方案")}</strong>
             <p>
-              {tr("每队四辩位各一次 · 种子")}
-              {p.randomMeta?.seed} ·{" "}
-              {tr("分层随机预排")}
+              {tr("每队四辩位各一次 · 每次生成自动随机")}
             </p>
           </div>
           <div className="summary-value">
@@ -335,14 +326,14 @@ export default function Draw({ p, update, notify, go }: PageProps) {
           {p.randomMeta?.resources && <div className="summary-value"><b>{p.randomMeta.resources.judgeMax}</b><span>{tr('同裁判最多次数')}</span></div>}
           <div className="summary-value">
             <b>{report.max_pair_meetings}</b>
-            <span>{tr("最多交手次数")}</span>
+            <span>{tr("单对最高交手")}</span>
           </div>
           <Button variant="outline" disabled={exporting} onClick={() => void exportAction(() => exportScheduleZIP(p))}>
             <Download size={16}/>
             {tr("导出完整 ZIP")}
           </Button>
         </div>)}
-      {report && !report.coverage_optimal && p.randomMeta?.mode === 'random-new' && p.randomMeta.options?.maxMeetings === 2 && <div className="warning-note">{tr('当前约束下未达到每队九个不同对手，可调整回避设置后重新生成。')}</div>}
+      {report && !report.coverage_optimal && p.randomMeta?.mode === 'random-new' && <div className="warning-note">{tr('本次搜索预算内未证明达到理论对手覆盖上界，已返回当前最优近似排阵。')}</div>}
       {round?.bp && (() => { const audit = analyzeBPRound(p, round); return <div className="random-summary"><div><strong>BP Power Match</strong><p>{tr('种子 {0} · 升池 {1} 队 · 重复交手 {2} 对', [round.bp.seed, audit.pullups.length, audit.repeatedPairs])}</p></div><div className="summary-value"><b>{audit.repeatPositionTeams.length}</b><span>{tr('重复辩位队伍')}</span></div></div>; })()}
       {!round ? (<Panel title={tr("准备好你的第一轮对阵")} description={tr("选择适合当前赛事的编排方式。")}>
           <div className="draw-options">
@@ -361,7 +352,6 @@ export default function Draw({ p, update, notify, go }: PageProps) {
               </span>
             </button>
             <button onClick={() => {
-                setSeed(String(crypto.getRandomValues(new Uint32Array(1))[0]));
                 setRandomOpen(true);
             }}>
               <></>
@@ -561,7 +551,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                           {tr("轮")}
                         </th>))}
                       <th>{tr("不同对手数")}</th>
-                      <th>{tr("最多交手次数")}</th>
+                      <th>{tr("单对最高交手")}</th>
                       <th>{tr("同场地最多次数")}</th>
                       <th>{tr("同裁判最多次数")}</th>
                     </tr>
@@ -612,16 +602,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
         }}>
         <div className="entity-form">
           <></>
-          <div className="form-grid"><label>{tr('最多交手次数')}<input type="number" min="1" max="4" value={options.maxMeetings} onChange={e => setOptions({ ...options, maxMeetings: Number(e.target.value) })} disabled={busy}/></label></div><div className="form-grid"><label>{tr('同校回避方式')}<select value={options.schoolAvoidance} onChange={e => setOptions({ ...options, schoolAvoidance: e.target.value as DrawOptions['schoolAvoidance'] })} disabled={busy}><option value="off">{tr('不回避')}</option><option value="prefer">{tr('尽量回避')}</option><option value="strict">{tr('严格回避')}</option></select></label><label>{tr('搜索强度')}<select value={options.searchDepth} onChange={e => setOptions({ ...options, searchDepth: e.target.value as DrawOptions['searchDepth'] })} disabled={busy}><option value="standard">{tr('标准')}</option><option value="deep">{tr('深度搜索')}</option></select></label></div><label>
-            {tr("随机种子")}
-            <div className="input-action">
-              <input type="number" min="0" max="4294967295" value={seed} onChange={(e) => setSeed(e.target.value)} disabled={busy}/>
-              <Button variant="outline" type="button" disabled={busy} onClick={() => setSeed(String(crypto.getRandomValues(new Uint32Array(1))[0]))}>
-                <Shuffle size={15}/>
-                {tr("换一个")}
-              </Button>
-            </div>
-          </label>
+          <div className="form-grid"><label>{tr('同校回避方式')}<select value={options.schoolAvoidance} onChange={e => setOptions({ ...options, schoolAvoidance: e.target.value as DrawOptions['schoolAvoidance'] })} disabled={busy}><option value="off">{tr('不回避')}</option><option value="prefer">{tr('尽量回避')}</option><option value="strict">{tr('严格回避')}</option></select></label><label>{tr('搜索强度')}<select value={options.searchDepth} onChange={e => setOptions({ ...options, searchDepth: e.target.value as DrawOptions['searchDepth'] })} disabled={busy}><option value="standard">{tr('标准')}</option><option value="deep">{tr('深度搜索')}</option></select></label></div>
           <></>
           <div className="strong-tag-controls"><Button variant="outline" type="button" onClick={() => setStrongOpen(true)} disabled={busy || scoresExist}>{tr('强队标签')} · {strongTeams.length}</Button><div className="strong-tags">{strongTeams.map(team => <Badge key={team.id} tone="orange">{team.name}</Badge>)}</div></div>
           {busy && (<div className="generation-progress">
