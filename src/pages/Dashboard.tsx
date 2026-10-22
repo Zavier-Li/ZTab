@@ -8,7 +8,7 @@ import { completeRound } from "@/lib/types";
 import { exportJSON } from "@/lib/export";
 export default function Dashboard({ p, go }: PageProps) {
     const teams = p.teams.filter((t) => t.active).length, judges = p.judges.filter((j) => j.active).length, venues = p.venues.filter((v) => v.active).length, completed = p.rounds.filter(completeRound).length;
-    const finished = p.rounds.length > 0 && completed === p.rounds.length;
+    const finished = p.rounds.length > 0 && completed === p.rounds.length && (!!p.randomMeta || completed >= (p.settings.preliminaryRounds ?? 4));
     const checks = [
         {
             label: tr("导入参赛队伍"),
@@ -46,7 +46,7 @@ export default function Dashboard({ p, go }: PageProps) {
               {finished ? tr("完赛") : p.rounds.length ? tr("赛事进行中") : tr("赛事筹备中")}
             </Badge>
             <span>
-              BP / {p.randomMeta ? tr("四轮随机编排") : tr("成绩配对模式")}
+              BP / {p.randomMeta ? tr("最优分层随机预排") : "BP Power Match"}
             </span>
           </div>
           <h2>{p.name}</h2>

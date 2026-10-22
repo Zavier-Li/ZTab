@@ -320,7 +320,7 @@ export async function exportScheduleZIP(p: Project) {
         original_draws: meta.original,
         swapped_baseline: meta.baseline,
         changed_role_slots: meta.changed,
-        mode: meta.mode,options:meta.options,
+        mode: meta.mode,options:meta.options,resource_optimization:meta.resources,
         venues: p.venues
           .filter((v) => p.rounds[0].rooms.some((r) => r.venueId === v.id))
           .map((v) => v.name),

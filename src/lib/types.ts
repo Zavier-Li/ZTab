@@ -59,6 +59,16 @@ export interface Round {
   rooms: Room[];
   createdAt: string;
   timeSlot?: string;
+  bp?: {
+    version: 1;
+    seed: number;
+    brackets: {level: number; allowed: number[]}[];
+    pullups: string[];
+    positionCost: number;
+    priorPullupCost: number;
+    repeatedPairs: number;
+    repeatPositionTeams: string[];
+  };
 }
 export interface Project {
   id: string;
@@ -69,7 +79,7 @@ export interface Project {
   judges: Judge[];
   venues: Venue[];
   rounds: Round[];
-  settings: { panelsPerRoom: number; assignTimer: boolean };
+  settings: { panelsPerRoom: number; assignTimer: boolean; preliminaryRounds?: number };
   eventPlan?: {
     timeSlots: string[];
     venueIds: string[];
@@ -84,6 +94,7 @@ export interface Project {
     changed: number;
     teamOrder: string[];
     options?:DrawOptions;
+    resources?: {method:'exhaustive-room-permutations'; assignments:number; venueMax:number; judgeMax:number; conflictCount:number; cost:number[]; groupCandidates?:number};
   };
 }
 export const uid = () => crypto.randomUUID();

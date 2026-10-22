@@ -1,3 +1,5 @@
+import { optimizeDrawResources } from '@/lib/draw-resources';
+import { analyzeBPRound } from '@/lib/bp-pairing';
 import {TableFrame} from '@/components/shared';
 import { ReportExport } from '@/components/ReportExport';
 import { db } from '@/lib/db';
@@ -17,7 +19,7 @@ import { importRoundDraw } from "@/lib/import";
 import { errorText } from "@/lib/utils";
 import { hasAnyScores } from '@/lib/types';
 import { defaultDrawOptions, validateDrawOptions, type DrawOptions } from '@/lib/random-draw';
-type Generated = ReturnType<typeof generateRandomDraw>;
+type Generated = ReturnType<typeof generateRandomDraw> & {groupCandidates?:number};
 type Edit = {
     room: number;
     kind: "team" | "judge" | "venue";
@@ -27,8 +29,9 @@ type Edit = {
 export default function Draw({ p, update, notify, go }: PageProps) {
     const [options, setOptions] = useState<DrawOptions>(p.randomMeta?.options ? { ...p.randomMeta.options, schoolThreshold: 3 } : defaultDrawOptions);
     const scoresExist = hasAnyScores(p);
+    const mode = "random-new" as const;
     const [panelRoom, setPanelRoom] = useState<number | null>(null);
-    const [selected, setSelected] = useState(p.rounds.at(-1)?.no ?? 1), [randomOpen, setRandomOpen] = useState(false), [seed, setSeed] = useState(String(crypto.getRandomValues(new Uint32Array(1))[0])), [mode, setMode] = useState<"random-new" | "adjusted">("random-new"), [busy, setBusy] = useState(false), [progress, setProgress] = useState(0), [edit, setEdit] = useState<Edit | null>(null), [checking, setChecking] = useState(false), [exporting, setExporting] = useState(false);
+    const [selected, setSelected] = useState(p.rounds.at(-1)?.no ?? 1), [randomOpen, setRandomOpen] = useState(false), [seed, setSeed] = useState(String(crypto.getRandomValues(new Uint32Array(1))[0])), [busy, setBusy] = useState(false), [progress, setProgress] = useState(0), [edit, setEdit] = useState<Edit | null>(null), [checking, setChecking] = useState(false), [exporting, setExporting] = useState(false);
     const workerRef = useRef<Worker | null>(null), file = useRef<HTMLInputElement>(null);
     useEffect(() => () => workerRef.current?.terminate(), []);
     useEffect(() => {
@@ -46,19 +49,36 @@ export default function Draw({ p, update, notify, go }: PageProps) {
     catch (e) {
         reportError = errorText(e);
     }
+    const teamAudit = new Map(p.teams.map(team => {
+        const opponents = new Map<string, number>(), venues = new Map<string, number>(), judges = new Map<string, number>();
+        for (const r of p.rounds) for (const room of r.rooms) {
+            if (!room.teamIds.includes(team.id)) continue;
+            venues.set(room.venueId, (venues.get(room.venueId) ?? 0) + 1);
+            for (const id of room.teamIds.filter(id => id !== team.id)) opponents.set(id, (opponents.get(id) ?? 0) + 1);
+            for (const judge of room.judges.filter(j => j.role !== 'Timer')) judges.set(judge.id, (judges.get(judge.id) ?? 0) + 1);
+        }
+        return [team.name, {opponents: Math.max(0, ...opponents.values()), venues: Math.max(0, ...venues.values()), judges: Math.max(0, ...judges.values())}];
+    }));
     async function power() {
         try {
-            const r = generatePowerRound(p);
-            await update({
-                ...p,
-                rounds: [...p.rounds, r],
+            setBusy(true);
+            const r = await db.transaction('rw', db.projects, async () => {
+                const latest = await db.projects.get(p.id);
+                if (!latest || latest.updatedAt !== p.updatedAt) throw new Error(tr('赛事数据已变更，请重新生成'));
+                const generated = generatePowerRound(latest);
+                const errors = validateDraw(latest, generated).errors;
+                if (errors.length) throw new Error(errors.join('；'));
+                latest.rounds.push(generated);
+                latest.updatedAt = new Date().toISOString();
+                await db.projects.put(latest);
+                return generated;
             });
             setSelected(r.no);
             notify(tr("第 {0} 轮已生成", [r.no]));
         }
         catch (e) {
             notify(errorText(e), true);
-        }
+        } finally { setBusy(false); }
     }
     function random() {
         if (scoresExist) {
@@ -163,8 +183,9 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                             (1 +
                                 next.settings.panelsPerRoom +
                                 Number(next.settings.assignTimer)))
-                        assignJudges(next, r);
+                        assignJudges({ ...next, rounds: rounds.filter(previous => previous.no < r.no) }, r);
                 }
+                const resources = mode === 'random-new' ? optimizeDrawResources(next, rounds, n) : undefined;
                 next.rounds = rounds;
                 next.randomMeta = {
                     seed: n,
@@ -172,7 +193,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                     original: generated.original,
                     baseline: generated.baseline,
                     changed: generated.changed,
-                    teamOrder: teams.map((t) => t.id), options,
+                    teamOrder: teams.map((t) => t.id), options, resources:resources ? {...resources,groupCandidates:generated.groupCandidates ?? 1} : undefined,
                 };
                 await update(next);
                 setSelected(1);
@@ -189,7 +210,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
         worker.postMessage({
             seed: n,
             names: teams.map((t) => t.name), options, institutions: teams.map(t => t.institution),
-            mode,
+            mode, project:p,
         });
     }
     async function applyEdit() {
@@ -234,6 +255,8 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                 if (check.max_pair_meetings > (next.randomMeta.options?.maxMeetings ?? 2))
                     throw new Error(tr("该调整会导致交手次数超过设定上限"));
             }
+            if (r.bp) Object.assign(r.bp, analyzeBPRound(next, r));
+            if (next.randomMeta) delete next.randomMeta.resources;
             await update(next);
             setEdit(null);
             notify(tr("调整已保存并通过检查"));
@@ -251,6 +274,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             assignJudges(p, r);
             await update({
                 ...p,
+                randomMeta: p.randomMeta ? {...p.randomMeta, resources:undefined} : undefined,
                 rounds: p.rounds.map((old) => (old.id === r.id ? r : old)),
             });
             notify(tr("已分配本轮裁判"));
@@ -275,18 +299,17 @@ export default function Draw({ p, update, notify, go }: PageProps) {
       <PageTitle eyebrow="DRAW & PAIRING" title={tr("对阵编排")} description={tr("合理的对阵，让每一场比赛都值得期待。")} actions={<>{p.rounds.length > 0 && <ReportExport p={p} kind="draw" notify={notify} label={tr("整套赛程")}/>}
             <Button variant="outline" disabled={busy} onClick={() => {
                 setSeed(String(crypto.getRandomValues(new Uint32Array(1))[0]));
-                setMode("random-new");
                 setRandomOpen(true);
             }}>
               <Shuffle size={16}/>
-              {tr("四轮随机编排")}
+              {tr("最优分层随机预排")}
             </Button>
-            <Button onClick={() => void power()} disabled={busy || !!p.randomMeta}>
+            {!p.randomMeta && p.rounds.length < (p.settings.preliminaryRounds ?? 4) && <Button onClick={() => void power()} disabled={busy || p.rounds.some(r => !completeRound(r) || r.rooms.some(room => room.drafts?.some(d => d.judgeId === 'official')))}>
               <Plus size={16}/>
               {tr("生成第")}
               {(p.rounds.at(-1)?.no ?? 0) + 1}
               {tr("轮")}
-            </Button>
+            </Button>}
           </>}/>
       {!p.rounds.length && <EventPlanSummary p={p}/>}
       {reportError && (<div className="warning-note" role="alert">
@@ -297,13 +320,11 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             <ShieldCheck size={24}/>
           </div>
           <div>
-            <strong>{tr("四轮排程校验通过")}</strong>
+            <strong>{(report.coverage_optimal && (p.randomMeta?.options?.maxMeetings ?? 2) === 2) ? tr("对手覆盖最优已验证") : tr("四轮排程校验通过")}</strong>
             <p>
               {tr("每队四辩位各一次 · 种子")}
               {p.randomMeta?.seed} ·{" "}
-              {p.randomMeta?.mode === "adjusted"
-                ? tr("原脚本调整模式")
-                : tr("独立随机模式")}
+              {tr("最优分层随机预排")}
             </p>
           </div>
           <div className="summary-value">
@@ -313,6 +334,8 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             </b>
             <span>{tr("不同对手 / 队")}</span>
           </div>
+          {p.randomMeta?.resources && <div className="summary-value"><b>{p.randomMeta.resources.venueMax}</b><span>{tr('同场地最多次数')}</span></div>}
+          {p.randomMeta?.resources && <div className="summary-value"><b>{p.randomMeta.resources.judgeMax}</b><span>{tr('同裁判最多次数')}</span></div>}
           <div className="summary-value">
             <b>{report.max_pair_meetings}</b>
             <span>{tr("最多交手次数")}</span>
@@ -322,16 +345,18 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             {tr("导出完整 ZIP")}
           </Button>
         </div>)}
+      {report && !report.coverage_optimal && p.randomMeta?.mode === 'random-new' && p.randomMeta.options?.maxMeetings === 2 && <div className="warning-note">{tr('当前约束下未达到每队九个不同对手，可调整回避设置后重新生成。')}</div>}
+      {round?.bp && (() => { const audit = analyzeBPRound(p, round); return <div className="random-summary"><div><strong>BP Power Match</strong><p>{tr('种子 {0} · 升池 {1} 队 · 重复交手 {2} 对', [round.bp.seed, audit.pullups.length, audit.repeatedPairs])}</p></div><div className="summary-value"><b>{audit.repeatPositionTeams.length}</b><span>{tr('重复辩位队伍')}</span></div></div>; })()}
       {!round ? (<Panel title={tr("准备好你的第一轮对阵")} description={tr("选择适合当前赛事的编排方式。")}>
           <div className="draw-options">
             <button onClick={() => void power()}>
               <></>
               <Badge>{tr("按轮次生成")}</Badge>
-              <h3>{tr("成绩配对")}</h3>
+              <h3>BP Power Match</h3>
               <p>
-                {tr("首轮随机分组，后续轮次按成绩配对。")}
+                {tr("首轮随机，后续按队伍积分池逐轮编排。")}
                 <br />
-                {tr("第 2–4 轮严格避免重复辩位。")}
+                {tr("兼顾升池公平、辩位平衡与重复交手。")}
               </p>
               <span>
                 {tr("生成首轮对阵")}
@@ -340,12 +365,11 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             </button>
             <button onClick={() => {
                 setSeed(String(crypto.getRandomValues(new Uint32Array(1))[0]));
-                setMode("random-new");
                 setRandomOpen(true);
             }}>
               <></>
               <Badge tone="orange">{tr("12 队 · 4 轮 · 3 赛场")}</Badge>
-              <h3>{tr("四轮随机编排")}</h3>
+              <h3>{tr("最优分层随机预排")}</h3>
               <p>
                 {tr("一次生成四轮，先优化对手分组。")}
                 <br />
@@ -437,6 +461,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                           </strong>
                           <Pencil size={12}/>
                         </button>
+                        {round.bp && <small>{tr('积分池 {0} 分',[round.bp.brackets[ri]?.level])}</small>}
                       </td>
                       {room.teamIds.map((id, i) => {
                     const t = p.teams.find((t) => t.id === id)!;
@@ -449,6 +474,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                             value: id,
                         })}>
                               <strong>{t.name}</strong>
+                              {round.bp && analyzeBPRound(p,round).pullups.includes(id) && <Badge tone="orange">{tr('升池')}</Badge>}
                               <p>
                                 {t.speaker1 || "—"} / {t.speaker2 || "—"}
                               </p>
@@ -537,6 +563,9 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                           {tr("轮")}
                         </th>))}
                       <th>{tr("不同对手数")}</th>
+                      <th>{tr("最多交手次数")}</th>
+                      <th>{tr("同场地最多次数")}</th>
+                      <th>{tr("同裁判最多次数")}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -548,6 +577,9 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                             <Badge>{r}</Badge>
                           </td>))}
                         <td>{t.distinct_opponents} / 11</td>
+                        <td>{teamAudit.get(t.name)?.opponents ?? 0}</td>
+                        <td>{teamAudit.get(t.name)?.venues ?? 0}</td>
+                        <td>{teamAudit.get(t.name)?.judges || "—"}</td>
                       </tr>))}
                   </tbody>
                 </table>
@@ -572,31 +604,12 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             }
         }}/>
       {panelRoom !== null && round && (<PanelEditor {...{ p, update, notify, go }} round={round} room={round.rooms[panelRoom]} onClose={() => setPanelRoom(null)}/>)}
-      <Modal title={tr("四轮随机编排")} description={tr("恰好 12 支启用队伍，每轮 3 个赛场。分组搜索后，通过二分图完美匹配严格轮换辩位。")} open={randomOpen} onClose={() => {
+      <Modal title={tr("最优分层随机预排")} description={tr("恰好 12 支启用队伍，每轮 3 个赛场。分组搜索后，通过二分图完美匹配严格轮换辩位。")} open={randomOpen} onClose={() => {
             if (!busy)
                 setRandomOpen(false);
         }}>
         <div className="entity-form">
           <></>
-          <label>
-            {tr("生成模式")}
-            <select value={mode} onChange={(e) => {
-            setMode(e.target.value as typeof mode);
-            setSeed(e.target.value === "adjusted"
-                ? "20261022"
-                : String(crypto.getRandomValues(new Uint32Array(1))[0]));
-        }} disabled={busy}>
-              <option value="random-new">
-                {tr("独立随机生成（适用于任意 12 队）")}
-              </option>
-              <option value="adjusted">
-                {tr("复现原脚本调整（原 CUDC 报名顺序）")}
-              </option>
-            </select>
-          </label>
-          {mode === "adjusted" && (<p className="text-sm text-amber-800">
-              {tr("保留 Star Star 辩位、heriot watt 首轮 OG，并执行原脚本的轮次与赛场交换；需要与原报名表相同的队伍顺序。默认种子 20261022。")}
-            </p>)}
           <div className="form-grid"><label>{tr('最多交手次数')}<input type="number" min="1" max="4" value={options.maxMeetings} onChange={e => setOptions({ ...options, maxMeetings: Number(e.target.value) })} disabled={busy}/></label></div><div className="form-grid"><label>{tr('同校回避方式')}<select value={options.schoolAvoidance} onChange={e => setOptions({ ...options, schoolAvoidance: e.target.value as DrawOptions['schoolAvoidance'] })} disabled={busy}><option value="off">{tr('不回避')}</option><option value="prefer">{tr('尽量回避')}</option><option value="strict">{tr('严格回避')}</option></select></label><label>{tr('搜索强度')}<select value={options.searchDepth} onChange={e => setOptions({ ...options, searchDepth: e.target.value as DrawOptions['searchDepth'] })} disabled={busy}><option value="standard">{tr('标准')}</option><option value="deep">{tr('深度搜索')}</option></select></label></div><label>
             {tr("随机种子")}
             <div className="input-action">

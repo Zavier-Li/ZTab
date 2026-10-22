@@ -88,13 +88,14 @@ export class PythonRandom {
 export type Draws = number[][][];
 export interface DrawOptions {maxMeetings:number;schoolAvoidance:'off'|'prefer'|'strict';schoolThreshold:number;searchDepth:'standard'|'deep'}
 export const defaultDrawOptions:DrawOptions={maxMeetings:2,schoolAvoidance:'prefer',schoolThreshold:3,searchDepth:'standard'};
-const normalizeInstitution=(s:string)=>s.toLowerCase().replace(/[\s\p{P}]/gu,'').replace(/(教师|学生|老师|teacher|student)/gi,'');
+export const normalizeInstitution=(s:string)=>s.toLowerCase().replace(/[\s\p{P}]/gu,'').replace(/(教师|学生|老师|teacher|student)/gi,'');
 export function schoolCollisions(draws:Draws,institutions:string[]){const schools=institutions.map(normalizeInstitution);let count=0;for(const round of draws)for(const room of round)for(let a=0;a<4;a++)for(let b=a+1;b<4;b++)if(schools[room[a]]&&schools[room[a]]===schools[room[b]])count++;return count}
 export function validateDrawOptions(options:DrawOptions,institutions:string[]){if(!Number.isInteger(options.maxMeetings)||options.maxMeetings<1||options.maxMeetings>4)throw new Error('最多交手次数必须为 1–4 的整数');if(options.maxMeetings===1)throw new Error('12 支队伍打四轮，每队需要 12 次对手席位，但只有 11 个不同对手，最多交手 1 次无解');if(!Number.isInteger(options.schoolThreshold)||options.schoolThreshold<3||options.schoolThreshold>12)throw new Error('同校回避启用学校数须为 3–12 的整数');if(!['off','prefer','strict'].includes(options.schoolAvoidance)||!['standard','deep'].includes(options.searchDepth))throw new Error('随机排程参数无效');const schools=institutions.map(normalizeInstitution).filter(Boolean);if(new Set(schools).size>=options.schoolThreshold&&options.schoolAvoidance==='strict'&&schools.some(s=>schools.filter(x=>x===s).length>3))throw new Error('严格同校回避无解：同一学校超过 3 支队伍，但每轮只有 3 个赛场')}
 export interface DrawReport {
   distinct_pairs: number;
   repeated_pairs: number;
   max_pair_meetings: number;
+  coverage_optimal: boolean;
   teams: { name: string; roles: string[]; distinct_opponents: number }[];
 }
 export function pairCounts(draws: Draws) {
@@ -203,101 +204,9 @@ export function assignRoles(groups: Draws): Draws {
     assignments.slice(i * 3, i * 3 + 3),
   );
 }
-function permutations<T>(a: T[]): T[][] {
-  return a.length
-    ? a.flatMap((x, i) =>
-        permutations(a.filter((_, j) => i !== j)).map((rest) => [x, ...rest]),
-      )
-    : [[]];
-}
-export function adjustDraws(original: Draws, names: string[]) {
-  const baseline = [0, 2, 1, 3].map((r) =>
-    original[r].map((room) => [...room]),
-  );
-  const star = names.findIndex((n) => n.toLowerCase() === "star star"),
-    heriot = names.findIndex((n) => n.toLowerCase() === "heriot watt"),
-    needle = names.indexOf("针锋相队");
-  if ([star, heriot, needle].includes(-1))
-    throw new Error(
-      "原脚本调整需要 Star Star、heriot watt、针锋相队，请选择独立随机模式或导入对应报名表",
-    );
-  const rooms = baseline.flat(),
-    options = rooms.map((room, index) =>
-      permutations(room)
-        .filter(
-          (c) =>
-            (!room.includes(star) || c.indexOf(star) === room.indexOf(star)) &&
-            (!(index < 3 && room.includes(heriot)) || c[0] === heriot),
-        )
-        .map((candidate) => ({
-          cost: room.reduce((s, t, i) => s + Number(t !== candidate[i]), 0),
-          candidate,
-        }))
-        .sort(
-          (a, b) =>
-            a.cost - b.cost ||
-            a.candidate.reduce((v, n, i) => v || n - b.candidate[i], 0),
-        ),
-    );
-  let bestCost = 49,
-    best: number[][] | null = null;
-  const used = new Uint8Array(12),
-    assigned = new Map<number, number[]>();
-  function search(cost: number) {
-    if (assigned.size === 12) {
-      bestCost = cost;
-      best = Array.from({ length: 12 }, (_, i) => [...assigned.get(i)!]);
-      return;
-    }
-    const available = new Map<number, (typeof options)[number]>();
-    let lower = cost;
-    for (let i = 0; i < 12; i++) {
-      if (assigned.has(i)) continue;
-      const candidates = options[i].filter((o) =>
-        o.candidate.every((team, role) => !(used[team] & (1 << role))),
-      );
-      if (!candidates.length) return;
-      available.set(i, candidates);
-      lower += candidates[0].cost;
-    }
-    if (lower >= bestCost) return;
-    const index = [...available.keys()].sort(
-      (a, b) => available.get(a)!.length - available.get(b)!.length || a - b,
-    )[0];
-    for (const { cost: extra, candidate } of available.get(index)!) {
-      if (cost + extra >= bestCost) continue;
-      assigned.set(index, candidate);
-      candidate.forEach((t, r) => (used[t] |= 1 << r));
-      search(cost + extra);
-      candidate.forEach((t, r) => (used[t] ^= 1 << r));
-      assigned.delete(index);
-    }
-  }
-  search(0);
-  if (!best) throw new Error("无法同时满足原脚本固定辩位与轮换要求");
-  const draws = Array.from({ length: 4 }, (_, i) =>
-    (best as number[][]).slice(i * 3, i * 3 + 3),
-  );
-  const location = (t: number) => {
-    for (let v = 0; v < 3; v++) {
-      const role = draws[2][v].indexOf(t);
-      if (role >= 0) return [v, role];
-    }
-    throw new Error("队伍位置缺失");
-  };
-  const [a, ra] = location(needle),
-    [b, rb] = location(heriot);
-  if (ra !== rb)
-    throw new Error(
-      "原脚本第三轮换队将破坏辩位轮换，请更换种子或使用独立随机模式",
-    );
-  [draws[2][a][ra], draws[2][b][rb]] = [draws[2][b][rb], draws[2][a][ra]];
-  [draws[3][1], draws[3][2]] = [draws[3][2], draws[3][1]];
-  return { draws, baseline, changed: bestCost };
-}
 export function validateSchedule(draws: Draws, names: string[]): DrawReport {
   if (names.length !== 12 || new Set(names).size !== 12 || draws.length !== 4)
-    throw new Error("四轮随机编排需要恰好 12 支不同队伍及 4 轮对阵");
+    throw new Error("最优分层随机预排需要恰好 12 支不同队伍及 4 轮对阵");
   const roles = names.map(() => [] as string[]),
     opponents = names.map(() => new Set<number>());
   for (const rooms of draws) {
@@ -325,6 +234,7 @@ export function validateSchedule(draws: Draws, names: string[]): DrawReport {
     distinct_pairs: counts.length,
     repeated_pairs: counts.filter((n) => n > 1).length,
     max_pair_meetings: Math.max(...counts),
+    coverage_optimal: Math.max(...counts) === 2 && counts.length === 54 && opponents.every(o => o.size === 9),
     teams: names.map((name, i) => ({
       name,
       roles: roles[i],
@@ -332,22 +242,56 @@ export function validateSchedule(draws: Draws, names: string[]): DrawReport {
     })),
   };
 }
+// A verified optimal 12-team design. Random relabelling, round and room
+// permutations preserve its 54 distinct pairs and nine opponents per team.
+const balancedDesign: Draws = [
+  [[4,8,1,3],[11,2,9,6],[7,5,0,10]],
+  [[6,4,7,5],[10,11,3,2],[0,9,8,1]],
+  [[9,6,10,4],[1,3,11,7],[2,0,5,8]],
+  [[8,7,4,11],[5,1,2,9],[3,10,6,0]],
+];
+
+function balancedGroups(seed: number, progress: ((n: number) => void) | undefined, options: DrawOptions, institutions: string[]): Draws {
+  validateDrawOptions(options, institutions);
+  const rng = new PythonRandom(seed);
+  const schoolActive = new Set(institutions.map(normalizeInstitution).filter(Boolean)).size >= options.schoolThreshold && options.schoolAvoidance !== 'off';
+  let best: Draws | null = null, bestSchool = Infinity;
+  // Always keep a certified design available. Relabelling searches school
+  // arrangements without trading away the coverage or position guarantee.
+  const attempts = schoolActive ? (options.searchDepth === 'deep' ? 24000 : 6000) : 1;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    const labels = rng.shuffle(Array.from({length:12}, (_, i) => i));
+    const candidate = rng.shuffle(balancedDesign.map(round => rng.shuffle(round.map(room => room.map(id => labels[id])))));
+    const penalty = schoolActive ? schoolCollisions(candidate, institutions) : 0;
+    if (penalty < bestSchool) { bestSchool = penalty; best = candidate; }
+    if (!penalty) break;
+    if (attempt % 200 === 0) progress?.(attempt / attempts);
+  }
+  if (options.schoolAvoidance === 'strict' && bestSchool > 0) {
+    // Additional hard constraints may exclude this design family. Search the
+    // full group space and report the resulting coverage without certification.
+    return optimizeGroups(seed, progress, options, institutions);
+  }
+  progress?.(1);
+  return best!;
+}
+
 export function generateRandomDraw(
   seed: number,
   names: string[],
-  mode: "random-new" | "adjusted",
+  mode: "random-new",
   progress?: (n: number) => void,
   options:DrawOptions=defaultDrawOptions,
   institutions:string[]=[],
 ) {
-  const original = assignRoles(optimizeGroups(seed, progress,options,institutions));
-  const adjusted =
-    mode === "adjusted"
-      ? adjustDraws(original, names)
-      : { draws: original, baseline: null, changed: 0 };
-  const report = validateSchedule(adjusted.draws, names);
+  const groups = options.maxMeetings === 2
+    ? balancedGroups(seed, progress, options, institutions)
+    : optimizeGroups(seed, progress, options, institutions);
+  const original = assignRoles(groups);
+  const report = validateSchedule(original, names);
+  report.coverage_optimal = report.coverage_optimal && options.maxMeetings === 2;
   if (report.max_pair_meetings > options.maxMeetings)
-    throw new Error('调整后交手次数超过设定上限，请更换种子或使用独立随机模式');
-  if(options.schoolAvoidance==='strict'&&new Set(institutions.map(normalizeInstitution).filter(Boolean)).size>=options.schoolThreshold&&schoolCollisions(adjusted.draws,institutions))throw new Error('原脚本调整破坏了严格同校回避，请使用独立随机模式');
-  return { ...adjusted, original, report, seed, mode,options };
+    throw new Error('交手次数超过设定上限，请调整参数或更换种子');
+  if(options.schoolAvoidance==='strict'&&new Set(institutions.map(normalizeInstitution).filter(Boolean)).size>=options.schoolThreshold&&schoolCollisions(original,institutions))throw new Error('无法满足严格同校回避，请调整参数');
+  return { draws: original, baseline: null, changed: 0, original, report, seed, mode,options };
 }

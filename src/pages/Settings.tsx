@@ -53,6 +53,8 @@ export default function Settings({ p, update, notify }: PageProps) {
                     tabOperator: String(f.get("tabOperator")).trim(),
                 };
             }
+            const preliminaryRounds = p.randomMeta ? 4 : Number(f.get('preliminaryRounds'));
+            if (!Number.isInteger(preliminaryRounds) || preliminaryRounds < Math.max(1,...p.rounds.map(r => r.no)) || preliminaryRounds > 24) throw new Error(tr('预赛轮数不能少于已有轮次，且须为1至24的整数'));
             await update({
                 ...p,
                 eventPlan,
@@ -62,6 +64,7 @@ export default function Settings({ p, update, notify }: PageProps) {
                 })),
                 name: String(f.get("name")).trim(),
                 settings: {
+                    preliminaryRounds,
                     panelsPerRoom: Number(f.get("panels")),
                     assignTimer: f.has("timer"),
                 },
@@ -83,6 +86,7 @@ export default function Settings({ p, update, notify }: PageProps) {
             {tr("赛事名称")}
             <input name="name" required defaultValue={p.name} maxLength={150}/>
           </label>
+          <label>{tr('预赛轮数')}<input type="number" name="preliminaryRounds" min={Math.max(1,...p.rounds.map(r => r.no))} max="24" required defaultValue={p.randomMeta ? 4 : p.settings.preliminaryRounds ?? 4} disabled={!!p.randomMeta}/></label>
           <label>
             {tr("每个赛场的副裁数量")}
             <input type="number" name="panels" min="0" max="10" required defaultValue={p.settings.panelsPerRoom}/>

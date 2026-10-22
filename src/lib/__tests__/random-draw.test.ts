@@ -13,17 +13,12 @@ describe("Python 随机排程迁移", () => {
       fixture.random,
     );
   });
-  it("默认种子逐队逐房逐辩位与原脚本一致", () => {
-    const generated = generateRandomDraw(20261022, fixture.names, "adjusted");
-    expect(generated.original).toEqual(fixture.original);
-    expect(generated.draws).toEqual(fixture.adjusted);
-    expect(generated.changed).toBe(8);
-    expect(generated.report).toEqual(fixture.report);
-    expect(generated.report.max_pair_meetings).toBe(2);
-    expect(
-      new Set(generated.report.teams.map((t) => t.distinct_opponents)),
-    ).toEqual(new Set([8, 9, 10]));
-  }, 20000);
+  it("默认种子达到覆盖上界且可以复现", () => {
+    const generated = generateRandomDraw(20261022, fixture.names, "random-new");
+    expect(generated.report.coverage_optimal).toBe(true);
+    expect(generated.report.teams.every(t => t.distinct_opponents === 9)).toBe(true);
+    expect(generated.draws).toEqual(generateRandomDraw(20261022, fixture.names, "random-new").draws);
+  });
   it.each([1, 42, 20261023])(
     "独立随机种子 %s 满足四轮出场与辩位及最多两次交手",
     (seed) => {

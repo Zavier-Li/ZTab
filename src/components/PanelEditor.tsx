@@ -27,6 +27,7 @@ export default function PanelEditor({
         (e) => e !== "赛场缺少主裁",
       );
       if (errors.length) throw new Error(errors.join("；"));
+      if (next.randomMeta) delete next.randomMeta.resources;
       await update(next);
       notify(tr("裁判组已保存"));
       onClose();

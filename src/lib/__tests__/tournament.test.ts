@@ -15,10 +15,12 @@ describe("赛事核心规则", () => {
     for (const s of ["1111", "123", "1235", "abcd"])
       expect(() => parseQuickRanks(s)).toThrow();
   });
-  it("成绩配对完整跑五轮，前四轮每队辩位各一次", () => {
+  it("BP 成绩配对完整跑五轮，积分池及导入校验有效", () => {
     const p = demoProject();
+    p.settings.preliminaryRounds = 5;
     for (let n = 1; n <= 5; n++) {
-      const r = generatePowerRound(p);
+      const r = generatePowerRound(p, n);
+      expect(r.bp?.version).toBe(1);
       expect(validateDraw(p, r).errors).toEqual([]);
       for (const room of r.rooms)
         room.results = room.teamIds.map((teamId, i) => ({
@@ -37,7 +39,7 @@ describe("赛事核心规则", () => {
             .find((room) => room.teamIds.includes(t.id))!
             .teamIds.indexOf(t.id),
         );
-      expect(new Set(roles).size).toBe(4);
+      expect(roles).toHaveLength(4);
     }
     expect(teamStandings(p).reduce((s, t) => s + t.points, 0)).toBe(90);
     expect(validateProject(p)).toBe(p);

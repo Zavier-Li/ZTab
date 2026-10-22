@@ -1359,6 +1359,7 @@ td strong {
 }
 .random-summary {
   display: flex;
+  flex-wrap: wrap;
   gap: 18px;
   align-items: center;
   border: 1px solid var(--line);

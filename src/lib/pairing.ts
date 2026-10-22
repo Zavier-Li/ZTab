@@ -1,3 +1,6 @@
+import { minimumAssignment } from './assignment';
+export { minimumAssignment } from './assignment';
+import { bpHistory, defineBPBrackets, generateBPRound } from './bp-pairing';
 import {
   POSITIONS,
   uid,
@@ -88,53 +91,6 @@ function schoolPenalty(p: Project, room: string[]) {
   return n;
 }
 // Rectangular Hungarian algorithm: globally minimizes conflict, strength mismatch, rating cost.
-export function minimumAssignment(cost: number[][]) {
-  const n = cost.length,
-    m = cost[0]?.length ?? 0;
-  if (m < n) throw new Error("裁判数量不足");
-  const u = Array(n + 1).fill(0),
-    v = Array(m + 1).fill(0),
-    p = Array(m + 1).fill(0),
-    way = Array(m + 1).fill(0);
-  for (let i = 1; i <= n; i++) {
-    p[0] = i;
-    let j0 = 0;
-    const min = Array(m + 1).fill(Infinity),
-      used = Array(m + 1).fill(false);
-    do {
-      used[j0] = true;
-      const i0 = p[j0];
-      let delta = Infinity,
-        j1 = 0;
-      for (let j = 1; j <= m; j++)
-        if (!used[j]) {
-          const cur = cost[i0 - 1][j - 1] - u[i0] - v[j];
-          if (cur < min[j]) {
-            min[j] = cur;
-            way[j] = j0;
-          }
-          if (min[j] < delta) {
-            delta = min[j];
-            j1 = j;
-          }
-        }
-      for (let j = 0; j <= m; j++)
-        if (used[j]) {
-          u[p[j]] += delta;
-          v[j] -= delta;
-        } else min[j] -= delta;
-      j0 = j1;
-    } while (p[j0] !== 0);
-    do {
-      const j1 = way[j0];
-      p[j0] = p[j1];
-      j0 = j1;
-    } while (j0);
-  }
-  const result = Array<number>(n);
-  for (let j = 1; j <= m; j++) if (p[j]) result[p[j] - 1] = j - 1;
-  return result;
-}
 export function assignJudges(p: Project, round: Round) {
   let available = p.judges
     .filter((j) => judgeAvailable(j, round.no))
@@ -147,10 +103,13 @@ export function assignJudges(p: Project, round: Round) {
       `第 ${round.no} 轮需要 ${needed} 名可用裁判，当前 ${available.length} 名；请检查启用状态及工作任务`,
     );
   for (let layer = 0; layer <= p.settings.panelsPerRoom; layer++) {
+    const previous = p.rounds.filter(r => r.no < round.no);
+    const exposure = round.rooms.map(room => available.map(j => room.teamIds.reduce((sum,id) => sum + previous.reduce((n,r) => n + r.rooms.filter(old => old.teamIds.includes(id) && old.judges.some(a => a.id === j.id && a.role !== 'Timer')).length,0) ** 2,0)));
+    const maxExposure = Math.max(0,...exposure.flat());
     const maxMismatch = Math.max(available.length, round.rooms.length),
       ratingWeight = round.rooms.length * 8 + 1,
-      conflictWeight =
-        round.rooms.length * (maxMismatch * ratingWeight + 8) + 1;
+      historyWeight = round.rooms.length * (maxMismatch * ratingWeight + 8) + 1,
+      conflictWeight = round.rooms.length * (maxExposure * historyWeight + maxMismatch * ratingWeight + 8) + 1;
     const cost = round.rooms.map((room, i) =>
       available.map(
         (j, k) =>
@@ -159,7 +118,7 @@ export function assignJudges(p: Project, round: Round) {
             room.teamIds.map((id) => p.teams.find((t) => t.id === id)!),
           ).length *
             conflictWeight +
-          Math.abs(i - k) * ratingWeight +
+          exposure[i][k] * historyWeight + Math.abs(i - k) * ratingWeight +
           9 -
           j.rating,
       ),
@@ -179,157 +138,20 @@ export function assignJudges(p: Project, round: Round) {
     );
   return round;
 }
-export function generatePowerRound(p: Project): Round {
-  if (p.randomMeta)
-    throw new Error("四轮随机排程已生成，请在独立赛事中使用成绩配对");
-  const no = (p.rounds.at(-1)?.no ?? 0) + 1;
-  if (p.rounds.some((r) => !completeRound(r)))
-    throw new Error("请先录入并保存全部前序轮次成绩");
-  const active = p.teams.filter((t) => t.active);
-  if (!active.length || active.length % 4)
-    throw new Error("启用队伍数必须大于 0 且能被 4 整除");
-  const venues = p.venues
-    .filter((v) => v.active)
-    .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
-  const n = active.length / 4;
-  if (venues.length < n)
-    throw new Error(`需要 ${n} 个启用场地，当前只有 ${venues.length} 个`);
-  const ranks = teamStandings(p).filter((t) => t.active);
-  let rooms: string[][] = [];
-  if (no === 1) {
-    let best = Infinity;
-    for (let attempt = 0; attempt < 100; attempt++) {
-      const ids = active.map((t) => t.id);
-      for (let i = ids.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [ids[i], ids[j]] = [ids[j], ids[i]];
-      }
-      const candidate = Array.from({ length: n }, (_, i) =>
-          ids.slice(i * 4, i * 4 + 4),
-        ),
-        penalty = candidate.reduce((s, r) => s + schoolPenalty(p, r), 0);
-      if (penalty < best) {
-        rooms = candidate;
-        best = penalty;
-        if (!best) break;
-      }
+export function generatePowerRound(p: Project, seed = crypto.getRandomValues(new Uint32Array(1))[0]): Round {
+  const round = generateBPRound(p, seed);
+  const plan = p.eventPlan?.judgePanels[round.no-1];
+  if (plan) {
+    for (const room of round.rooms) {
+      const venue = p.eventPlan!.venueIds.indexOf(room.venueId);
+      if (venue < 0 || !plan[venue]?.length) throw new Error('预设赛场缺少裁判安排');
+      room.judges = plan[venue].map((id,i) => {
+        if (!p.judges.some(j => j.id === id && judgeAvailable(j, round.no))) throw new Error('预设裁判不存在或本轮不可用');
+        return {id, role:i === 0 ? 'Chair' as const : 'Panel' as const};
+      });
     }
-  } else if (no >= 2 && no <= 4) {
-    const infos = ranks
-      .map((t, i) => ({
-        id: t.id,
-        index: i,
-        unused: history(p, t.id).flatMap((count, pos) => (count ? [] : [pos])),
-      }))
-      .sort((a, b) => a.unused.length - b.unused.length || a.index - b.index);
-    if (
-      infos.some((t) => !t.unused.length || history(p, t.id).some((c) => c > 1))
-    )
-      throw new Error(
-        "前序辩位存在重复，无法保证第 2–4 轮辩位轮换，请先检查历史对阵",
-      );
-    const quotas = [n, n, n, n],
-      forced = new Map<string, number>(),
-      memo = new Set<string>();
-    function search(i: number): boolean {
-      if (i === infos.length) return true;
-      const key = `${i}:${quotas}`;
-      if (memo.has(key)) return false;
-      for (const pos of [...infos[i].unused].sort(
-        (a, b) => quotas[b] - quotas[a] || a - b,
-      )) {
-        if (!quotas[pos]) continue;
-        quotas[pos]--;
-        const possible = quotas.every(
-          (q, k) =>
-            infos.slice(i + 1).filter((t) => t.unused.includes(k)).length >= q,
-        );
-        if (possible) {
-          forced.set(infos[i].id, pos);
-          if (search(i + 1)) return true;
-          forced.delete(infos[i].id);
-        }
-        quotas[pos]++;
-      }
-      memo.add(key);
-      return false;
-    }
-    if (!search(0)) throw new Error("无法分配不重复的辩位，请检查历史对阵");
-    const buckets = POSITIONS.map((_, pos) =>
-      ranks.filter((t) => forced.get(t.id) === pos).map((t) => t.id),
-    );
-    rooms = Array.from({ length: n }, (_, i) => buckets.map((b) => b[i]));
-    const roomScore = (room: string[]) => {
-      const rr = room.map((id) => ranks.find((t) => t.id === id)!);
-      return [
-        Math.max(...rr.map((t) => t.points)) -
-          Math.min(...rr.map((t) => t.points)),
-        Math.max(...rr.map((t) => t.total)) -
-          Math.min(...rr.map((t) => t.total)),
-        Math.max(...room.map((id) => ranks.findIndex((t) => t.id === id))) -
-          Math.min(...room.map((id) => ranks.findIndex((t) => t.id === id))),
-        schoolPenalty(p, room),
-      ];
-    };
-    for (let pass = 0; pass < 5; pass++) {
-      let changed = false;
-      for (let a = 0; a < n; a++)
-        for (let b = a + 1; b < n; b++)
-          for (let pos = 0; pos < 4; pos++) {
-            const before = roomScore(rooms[a]).map(
-              (s, i) => s + roomScore(rooms[b])[i],
-            );
-            [rooms[a][pos], rooms[b][pos]] = [rooms[b][pos], rooms[a][pos]];
-            const after = roomScore(rooms[a]).map(
-              (s, i) => s + roomScore(rooms[b])[i],
-            );
-            if (compare(after, before) < 0) changed = true;
-            else
-              [rooms[a][pos], rooms[b][pos]] = [rooms[b][pos], rooms[a][pos]];
-          }
-      if (!changed) break;
-    }
-  } else {
-    rooms = Array.from({ length: n }, (_, i) =>
-      ranks.slice(i * 4, i * 4 + 4).map((t) => t.id),
-    );
-    for (let pass = 0; pass < 5; pass++)
-      for (let a = 0; a < n; a++)
-        for (let b = a + 1; b < n; b++)
-          for (let i = 0; i < 4; i++)
-            for (let j = 0; j < 4; j++) {
-              const x = ranks.find((t) => t.id === rooms[a][i])!,
-                y = ranks.find((t) => t.id === rooms[b][j])!;
-              if (x.points !== y.points || x.total !== y.total) continue;
-              const before =
-                schoolPenalty(p, rooms[a]) + schoolPenalty(p, rooms[b]);
-              [rooms[a][i], rooms[b][j]] = [rooms[b][j], rooms[a][i]];
-              if (
-                schoolPenalty(p, rooms[a]) + schoolPenalty(p, rooms[b]) >=
-                before
-              )
-                [rooms[a][i], rooms[b][j]] = [rooms[b][j], rooms[a][i]];
-            }
+    return round;
   }
-  if (no === 1 || no > 4)
-    rooms = rooms.map(
-      (room) =>
-        permutations(room).sort((a, b) =>
-          compare(positionScore(p, a), positionScore(p, b)),
-        )[0],
-    );
-  const round: Round = {
-    id: uid(),
-    no,
-    createdAt: new Date().toISOString(),
-    rooms: rooms.map((teamIds, i) => ({
-      id: uid(),
-      venueId: venues[i].id,
-      teamIds,
-      judges: [],
-      results: [],
-    })),
-  };
   return assignJudges(p, round);
 }
 export function validateDraw(p: Project, r: Round) {
@@ -342,6 +164,14 @@ export function validateDraw(p: Project, r: Round) {
   if (new Set(ids).size !== ids.length) errors.push("本轮存在重复出场队伍");
   if (new Set(venues).size !== venues.length) errors.push("本轮存在重复场地");
   if (new Set(judges).size !== judges.length) errors.push("本轮存在重复裁判");
+  if (r.bp) {
+    const before = bpHistory(p, r.no);
+    const expected = defineBPBrackets(ids.map(id => before.points.get(id) ?? 0));
+    if (JSON.stringify(expected.map(b => JSON.stringify(b)).sort()) !== JSON.stringify(r.bp.brackets.map(b => JSON.stringify(b)).sort())) errors.push('BP 积分池信息与历史成绩不一致');
+    r.rooms.forEach((room,i) => {
+      if (room.teamIds.some(id => !r.bp!.brackets[i]?.allowed.includes(before.points.get(id) ?? 0))) errors.push('队伍不属于本场 BP 积分池');
+    });
+  }
   for (const room of r.rooms) {
     if (room.teamIds.length !== 4) errors.push("每个赛场必须有四支队伍");
     if (!room.judges.some((j) => j.role === "Chair"))
@@ -375,7 +205,7 @@ export function validateDraw(p: Project, r: Round) {
             .filter((pr) => pr.no < r.no)
             .some((pr) => pr.rooms.some((rr) => rr.teamIds[pos] === id))
         )
-          errors.push(
+          (r.bp ? warnings : errors).push(
             `${p.teams.find((t) => t.id === id)?.name} 重复担任 ${POSITIONS[pos]}`,
           );
       });

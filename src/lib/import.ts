@@ -224,7 +224,8 @@ export function validateProject(input: unknown): Project {
     !Number.isInteger(p.settings.panelsPerRoom) ||
     p.settings.panelsPerRoom < 0 ||
     p.settings.panelsPerRoom > 10 ||
-    typeof p.settings.assignTimer !== "boolean"
+    typeof p.settings.assignTimer !== "boolean" ||
+    p.settings.preliminaryRounds !== undefined && (!Number.isInteger(p.settings.preliminaryRounds) || p.settings.preliminaryRounds < 1 || p.settings.preliminaryRounds > 24)
   )
     throw new Error("赛事设置格式不正确");
   const roundNos = p.rounds.map((r) => r.no);
@@ -236,6 +237,7 @@ export function validateProject(input: unknown): Project {
   for (const r of p.rounds) {
     if (!Array.isArray(r.rooms) || !r.rooms.length)
       throw new Error("轮次缺少赛场");
+    if (r.bp && (r.bp.version !== 1 || !Number.isSafeInteger(r.bp.seed) || r.bp.seed < 0 || !Array.isArray(r.bp.brackets) || r.bp.brackets.length !== r.rooms.length || r.bp.brackets.some(b => !Number.isInteger(b.level) || !Array.isArray(b.allowed) || !b.allowed.length || b.allowed.some(n => !Number.isInteger(n) || n < 0)))) throw new Error('BP 编排信息格式不正确');
     for (const room of r.rooms) {
       if (
         !Array.isArray(room.teamIds) ||
@@ -539,7 +541,7 @@ export async function importRoundDraw(file: File, p: Project, no: number) {
     rounds: [],
     randomMeta: undefined,
   });
-  const round = { ...imported.rounds[0], no };
+  const round = { ...imported.rounds[0], no, bp:old?.bp };
   const next = {
     ...p,
     venues: imported.venues,
@@ -551,6 +553,7 @@ export async function importRoundDraw(file: File, p: Project, no: number) {
     const errors = validateDraw(next, r).errors;
     if (errors.length) throw new Error(errors.join("；"));
   }
+  if (next.randomMeta) delete next.randomMeta.resources;
   if (p.randomMeta) {
     const m = p.randomMeta;
     const report = validateSchedule(
