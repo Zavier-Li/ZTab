@@ -183,7 +183,7 @@
   "快捷输入 4132，表示 OG、OO、CG、CO 的名次分别为 4、1、3、2。每场名次须恰好包含 1、2、3、4。": "Enter 4132 for ranks 4, 1, 3, 2 in OG, OO, CG, CO order. Each room must use ranks 1, 2, 3 and 4 exactly once.",
   "快速开始": "Quick start",
   "恰好 12 支启用队伍，每轮 3 个赛场。分组搜索后，通过二分图完美匹配严格轮换辩位。": "Exactly 12 active teams and 3 rooms per round. Group search is followed by bipartite perfect matching for strict position rotation.",
-  "成绩与评分": "Results & ballots",
+  "成绩与评分": "Results and ballots",
   "成绩已完成": "Results complete",
   "成绩录入": "Results & ballots",
   "成绩配对": "Power pairing",
@@ -484,5 +484,16 @@
   "完赛": "Completed",
   "重置赛事": "Reset tournament",
   "赛事已重置": "Tournament reset",
-  "重置当前赛事？将清空全部队伍、裁判、场地、赛程、成绩、裁判评分和草稿，仅保留赛事名称。此操作无法撤销，请先备份。": "Reset this tournament? All teams, judges, venues, draws, results, ballots and drafts will be deleted. Only the tournament name is kept. This cannot be undone; export a backup first."
+  "重置当前赛事？将清空全部队伍、裁判、场地、赛程、成绩、裁判评分和草稿，仅保留赛事名称。此操作无法撤销，请先备份。": "Reset this tournament? All teams, judges, venues, draws, results, ballots and drafts will be deleted. Only the tournament name is kept. This cannot be undone; export a backup first.",
+  "选择需要清空的项目。此操作无法撤销，请先备份。": "Select what to clear. This cannot be undone; export a backup first.",
+  "赛程与对阵": "Schedule and draws",
+  "队伍与辩手": "Teams and speakers",
+  "裁判资料": "Judge records",
+  "场地资料": "Venue records",
+  "赛事设置与安排": "Tournament settings and plans",
+  "全选": "Select all",
+  "确认重置": "Confirm reset",
+  "清空队伍或场地会同时清空赛程和全部评分。": "Clearing teams or venues also clears all draws and scores.",
+  "清空裁判会删除裁判安排及个人评分，保留正式成绩。": "Clearing judges also removes judge assignments and individual ballots; official results are kept.",
+  "清空场地会同时清空赛事场次安排。": "Clearing venues also removes the event plan."
 }

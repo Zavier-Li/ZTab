@@ -130,11 +130,6 @@ export default function App() {
       {mobile && (<button className="sidebar-scrim" aria-label={tr("关闭导航")} onClick={() => setMobile(false)}/>)}
       <aside className={`sidebar ${mobile ? "is-open" : ""}`}>
         <button className="brand" onClick={() => go("overview")} aria-label="ZTab Home">
-          <span className="brand-mark">
-            <svg viewBox="0 0 32 32">
-              <path d="M8 8h18L14 21h11v4H6l12-13H8z" fill="currentColor"/>
-            </svg>
-          </span>
           <strong>
             ZTab<span>.</span>
           </strong>
