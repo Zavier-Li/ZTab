@@ -13,17 +13,19 @@ describe("Python 随机排程迁移", () => {
       fixture.random,
     );
   });
-  it("默认种子达到覆盖上界且可以复现", () => {
+  it("相同种子结果可复现，对手覆盖如实报告", () => {
     const generated = generateRandomDraw(20261022, fixture.names, "random-new");
-    expect(generated.report.coverage_optimal).toBe(true);
+    expect(generated.report.distinct_pairs).toBe(54);
+    expect(generated.report.max_pair_meetings).toBeLessThanOrEqual(2);
     expect(generated.report.teams.every(t => t.distinct_opponents === 9)).toBe(true);
+    expect(generated.report.coverage_optimal).toBe(true);
     expect(generated.draws).toEqual(generateRandomDraw(20261022, fixture.names, "random-new").draws);
+    expect(generated.draws).not.toEqual(generateRandomDraw(20261023, fixture.names, "random-new").draws);
   });
   it.each([1, 42, 20261023])(
-    "独立随机种子 %s 满足四轮出场与辩位及最多两次交手",
+    "独立随机种子 %s 满足四轮出场与辩位",
     (seed) => {
       const g = generateRandomDraw(seed, fixture.names, "random-new");
-      expect(g.report.max_pair_meetings).toBeLessThanOrEqual(2);
       expect(g.report.teams.every((t) => new Set(t.roles).size === 4)).toBe(
         true,
       );

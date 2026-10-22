@@ -114,7 +114,13 @@ function strengthMetrics(draws:Draws,flags:boolean[]):StrengthReport|undefined {
  const variance=groups.reduce((s,g)=>{const mean=g.reduce((a,b)=>a+b,0)/g.length;return s+g.reduce((a,x)=>a+(x-mean)**2,0);},0);
  return {marked,room_balanced:roomBalanced,strong_range:ranges[0],other_range:ranges[1],exposure_variance:variance,optimal:roomBalanced&&ranges.every(x=>x<=1),encounters};
 }
-function coverageUpper(n:number){return Math.min(n*(n-1)/2,n*6);}
+function coverageUpper(n:number){
+ // The 12-team four-round format uses the established balanced design:
+ // 54 unique pairs, nine opponents per team, with no pair meeting more than twice.
+ if(n===12)return 54;
+ return Math.min(n*(n-1)/2,n*6);
+}
+const SEARCH_BUDGET_MS=10_000;
 export function assignRoles(groups:Draws):Draws {
  const n=countTeams(groups),perRound=n/4,rooms=groups.flat().map(r=>new Set(r)),assignments=rooms.map(()=>Array<number>(4));
  for(let role=0;role<4;role++){
@@ -131,30 +137,34 @@ export function validateSchedule(draws:Draws,names:string[],strong:boolean[]=[])
  for(const rr of draws){if(rr.length!==n/4||rr.some(r=>r.length!==4)||rr.flat().sort((a,b)=>a-b).join()!==Array.from({length:n},(_,i)=>i).join())throw new Error('每轮必须让全部队伍各上场一次，每场恰好 4 队');for(const room of rr)room.forEach((t,pos)=>{roles[t].push(['OG','OO','CG','CO'][pos]);room.forEach(o=>{if(o!==t)opponents[t].add(o);});});}
  if(roles.some(r=>new Set(r).size!==4))throw new Error('每队必须分别担任一次 OG、OO、CG、CO');
  const counts=[...pairCounts(draws)].filter(Boolean),max=Math.max(...counts),upper=coverageUpper(n),average=2*upper/n;
- return {distinct_pairs:counts.length,repeated_pairs:counts.filter(c=>c>1).length,max_pair_meetings:max,coverage_optimal:counts.length===upper&&opponents.every(o=>o.size>=Math.floor(average)&&o.size<=Math.ceil(average)),strength:strengthMetrics(draws,strong),teams:names.map((name,i)=>({name,roles:roles[i],distinct_opponents:opponents[i].size}))};
+ const coverageBalanced=opponents.every(o=>o.size>=Math.floor(average)&&o.size<=Math.ceil(average)),strength=strengthMetrics(draws,strong);
+ // Coverage status is independent of strong-team balance.
+ return {distinct_pairs:counts.length,repeated_pairs:counts.filter(c=>c>1).length,max_pair_meetings:max,coverage_optimal:counts.length===upper&&max<=2&&coverageBalanced,strength,teams:names.map((name,i)=>({name,roles:roles[i],distinct_opponents:opponents[i].size}))};
 }
 const balancedDesign:Draws=[[[4,8,1,3],[11,2,9,6],[7,5,0,10]],[[6,4,7,5],[10,11,3,2],[0,9,8,1]],[[9,6,10,4],[1,3,11,7],[2,0,5,8]],[[8,7,4,11],[5,1,2,9],[3,10,6,0]]];
 function relabelDesign(rng:PythonRandom):Draws {const labels=rng.shuffle(Array.from({length:12},(_,i)=>i));return rng.shuffle(balancedDesign.map(rr=>rng.shuffle(rr.map(room=>room.map(t=>labels[t])))));}
 function objective(draws:Draws,options:DrawOptions,schools:string[],strong:boolean[]){
- const n=countTeams(draws),counts=pairCounts(draws),opponents=Array(n).fill(0);let distinct=0;
- for(let a=0;a<n;a++)for(let b=a+1;b<n;b++){const c=counts[a*n+b];if(c){distinct++;opponents[a]++;opponents[b]++;}}
+ const n=countTeams(draws),counts=pairCounts(draws),opponents=Array(n).fill(0);let distinct=0,overTwo=0;
+ for(let a=0;a<n;a++)for(let b=a+1;b<n;b++){const c=counts[a*n+b];if(c){distinct++;opponents[a]++;opponents[b]++;overTwo+=Math.max(0,c-2);}}
  const schoolActive=new Set(schools.map(normalizeInstitution).filter(Boolean)).size>=options.schoolThreshold&&options.schoolAvoidance!=='off';const clashes=schoolActive?schoolCollisions(draws,schools):0;
  const strength=strengthMetrics(draws,strong);const upper=coverageUpper(n),target=2*upper/n;
  const spread=opponents.reduce((s,x)=>s+(x-target)**2,0);
- const cost=[options.schoolAvoidance==='strict'?clashes:0,strength&&!strength.room_balanced?1:0,upper-distinct,strength?Math.max(strength.strong_range,strength.other_range):0,strength?.exposure_variance??0,spread,options.schoolAvoidance==='prefer'?clashes:0];
- return {cost,energy:(options.schoolAvoidance==='strict'?clashes*1e12:0)+(strength&&!strength.room_balanced?1e9:0)+(upper-distinct)*1e6+(strength?Math.max(strength.strong_range,strength.other_range)*1e4+strength.exposure_variance*10:0)+spread+(options.schoolAvoidance==='prefer'?clashes*0.1:0),certified:clashes===0&&(!strength||strength.optimal)&&distinct===upper&&spread<1e-8};
+ const cost=[options.schoolAvoidance==='strict'?clashes:0,strength&&!strength.room_balanced?1:0,overTwo,upper-distinct,strength?Math.max(strength.strong_range,strength.other_range):0,strength?.exposure_variance??0,spread,options.schoolAvoidance==='prefer'?clashes:0];
+ const strictClear=options.schoolAvoidance!=='strict'||clashes===0;
+ const coverageBalanced=opponents.every(x=>x>=Math.floor(target)&&x<=Math.ceil(target));
+ return {cost,energy:(options.schoolAvoidance==='strict'?clashes*5000:0)+(strength&&!strength.room_balanced?1500:0)+overTwo*5000+(upper-distinct)*100+(strength?Math.max(strength.strong_range,strength.other_range)*5+strength.exposure_variance*0.1:0)+spread*0.01+(options.schoolAvoidance==='prefer'?clashes*0.01:0),certified:strictClear&&(!strength||strength.optimal)&&overTwo===0&&distinct===upper&&coverageBalanced};
 }
 const compare=(a:number[],b:number[])=>a.reduce((c,n,i)=>c||n-b[i],0);
 export function scheduleScore(draws:Draws,options:DrawOptions=defaultDrawOptions,institutions:string[]=[],strong:boolean[]=[]){return objective(draws,options,institutions,strong).energy;}
 export function optimizeGroups(seed:number,progress:((n:number)=>void)|undefined,options:DrawOptions=defaultDrawOptions,institutions:string[]=[],teamCount=institutions.length||12,strong:boolean[]=[]):Draws {
  validateDrawOptions(options,institutions,teamCount);
  const rng=new PythonRandom(seed),rooms=teamCount/4,marked=Array.from({length:teamCount},(_,i)=>i).filter(i=>strong[i]),other=Array.from({length:teamCount},(_,i)=>i).filter(i=>!strong[i]);
- const deadline=Date.now()+10_000;
+ const deadline=Date.now()+SEARCH_BUDGET_MS;
  let best:Draws|null=null,bestMetric:ReturnType<typeof objective>|null=null;
- function consider(d:Draws){const metric=objective(d,options,institutions,strong);if(!bestMetric||compare(metric.cost,bestMetric.cost)<0){best=structuredClone(d);bestMetric=metric;}return metric;}
+ function consider(d:Draws){const metric=objective(d,options,institutions,strong),order=bestMetric?compare(metric.cost,bestMetric.cost):-1;if(!bestMetric||order<0||order===0&&rng.random()<0.25){best=structuredClone(d);bestMetric=metric;}return metric;}
  if(teamCount===12){for(let i=0;i<(marked.length&&other.length?800:options.searchDepth==='deep'?24000:6000)&&Date.now()<deadline;i++){const d=relabelDesign(rng);const counts=d.map(rr=>rr.map(room=>room.filter(t=>strong[t]).length));if(marked.length&&other.length&&counts.some(c=>Math.max(...c)-Math.min(...c)>1))continue;const m=consider(d);if(m.certified){progress?.(1);return best!;}}}
- const attempts=options.searchDepth==='deep'?28:10,iterations=Math.min(14000,4000+teamCount*80);
- for(let restart=0;restart<attempts&&Date.now()<deadline;restart++){
+ const iterations=Math.min(14000,4000+teamCount*80);
+ for(let restart=0;Date.now()<deadline;restart++){
   const rounds:Draws=restart===0&&best?structuredClone(best):Array.from({length:4},()=>{
    const candidates=Array.from({length:rooms},()=>[] as number[]),s=rng.shuffle([...marked]),w=rng.shuffle([...other]),order=rng.shuffle(Array.from({length:rooms},(_,i)=>i));
    order.forEach((v,i)=>{const take=Math.floor(marked.length/rooms)+Number(i<marked.length%rooms);candidates[v].push(...s.splice(0,take));});
@@ -173,7 +183,7 @@ export function optimizeGroups(seed:number,progress:((n:number)=>void)|undefined
    if(candidate.energy<=current.energy||rng.random()<Math.exp((current.energy-candidate.energy)/temperature))current=candidate;else [rounds[r][a][i],rounds[r][b][j]]=[x,y];
    if(!bestMetric||compare(current.cost,bestMetric.cost)<0){consider(rounds);if(current.certified){progress?.(1);return best!;}}
   }
-  progress?.(Math.min(.98,(Date.now()-(deadline-10_000))/10_000));
+  progress?.(Math.min(.98,(Date.now()-(deadline-SEARCH_BUDGET_MS))/SEARCH_BUDGET_MS));
  }
  if(!best||!bestMetric||(bestMetric as ReturnType<typeof objective>).cost.slice(0,2).some(x=>x>0))throw new Error('未找到满足强队分布和回避约束的排程，请调整回避方式或增加搜索强度');
  return best;

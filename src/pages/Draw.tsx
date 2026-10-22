@@ -309,7 +309,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             <ShieldCheck size={24}/>
           </div>
           <div>
-            <strong>{report.coverage_optimal ? tr("对手覆盖最优已验证") : tr("近似最优方案")}</strong>
+            <strong>{report.coverage_optimal ? tr("对手覆盖目标已达成") : tr("近似最优方案")}</strong>
             <p>
               {tr("每队四辩位各一次 · 每次生成自动随机")}
             </p>
@@ -333,7 +333,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             {tr("导出完整 ZIP")}
           </Button>
         </div>)}
-      {report && !report.coverage_optimal && p.randomMeta?.mode === 'random-new' && <div className="warning-note">{tr('本次搜索预算内未证明达到理论对手覆盖上界，已返回当前最优近似排阵。')}</div>}
+      {report && !report.coverage_optimal && p.randomMeta?.mode === 'random-new' && <div className="warning-note">{tr('当前排阵未达到均衡对手覆盖目标，已返回本次搜索中的最佳结果。')}</div>}
       {round?.bp && (() => { const audit = analyzeBPRound(p, round); return <div className="random-summary"><div><strong>BP Power Match</strong><p>{tr('种子 {0} · 升池 {1} 队 · 重复交手 {2} 对', [round.bp.seed, audit.pullups.length, audit.repeatedPairs])}</p></div><div className="summary-value"><b>{audit.repeatPositionTeams.length}</b><span>{tr('重复辩位队伍')}</span></div></div>; })()}
       {!round ? (<Panel title={tr("准备好你的第一轮对阵")} description={tr("选择适合当前赛事的编排方式。")}>
           <div className="draw-options">

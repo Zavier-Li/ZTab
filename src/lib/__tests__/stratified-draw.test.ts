@@ -1,6 +1,15 @@
 import {describe,it,expect} from 'vitest';
-import {generateRandomDraw,defaultDrawOptions} from '../random-draw';
+import fixture from './python-fixture.json';
+import {generateRandomDraw,defaultDrawOptions,validateSchedule} from '../random-draw';
 describe('通用分层预排',()=>{
+ it('覆盖目标达成时不因强队均衡指标而误报覆盖未达标',()=>{
+  const flags=Array.from({length:12},(_,i)=>i<4);
+  const report=validateSchedule(fixture.original,fixture.names,flags);
+  expect(report.distinct_pairs).toBe(54);
+  expect(report.max_pair_meetings).toBeLessThanOrEqual(2);
+  expect(report.coverage_optimal).toBe(true);
+  expect(report.strength?.optimal).toBe(false);
+ });
  it.each([4,8,12,16,20,24])('%s队四轮各辩位一次，对手覆盖如实报告',n=>{
   const g=generateRandomDraw(42,Array.from({length:n},(_,i)=>`T${i}`),'random-new',undefined,defaultDrawOptions,[]);
   expect(g.draws.every(r=>r.length===n/4&&new Set(r.flat()).size===n)).toBe(true);
