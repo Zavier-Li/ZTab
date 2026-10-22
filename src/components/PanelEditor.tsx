@@ -3,7 +3,7 @@ import { Plus, Trash2 } from "lucide-react";
 import { Modal } from "./ui/dialog";
 import { Button } from "./ui/button";
 import { type PageProps } from "./shared";
-import { type Round, type Room } from "@/lib/types";
+import { appendDrawSnapshot, type Round, type Room } from "@/lib/types";
 import { validateDraw } from "@/lib/pairing";
 import { errorText } from "@/lib/utils";
 import { t as tr } from "@/lib/i18n";
@@ -28,7 +28,7 @@ export default function PanelEditor({
       );
       if (errors.length) throw new Error(errors.join("；"));
       if (next.randomMeta) delete next.randomMeta.resources;
-      await update(next);
+      await update(appendDrawSnapshot(next, 'edited'));
       notify(tr("裁判组已保存"));
       onClose();
     } catch (e) {

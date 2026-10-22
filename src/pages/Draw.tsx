@@ -5,13 +5,14 @@ import { ReportExport } from '@/components/ReportExport';
 import { db } from '@/lib/db';
 import { EventPlanSummary } from "@/components/EventPlan";
 import PanelEditor from "@/components/PanelEditor";
+import { DrawHistory } from "@/components/DrawHistory";
 import { t as tr } from "@/lib/i18n";
 import { useEffect, useRef, useState } from "react";
-import { Plus, Download, Shuffle, ShieldCheck, Sparkles, ArrowRight, GitBranch, CheckCircle2, TriangleAlert, Pencil, Scale, Upload, } from "lucide-react";
+import { Plus, Download, Shuffle, ShieldCheck, Sparkles, ArrowRight, GitBranch, CheckCircle2, TriangleAlert, Pencil, Scale, Upload, ArrowLeftRight, } from "lucide-react";
 import { PageTitle, Panel, Badge, Empty, type PageProps, } from "@/components/shared";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/dialog";
-import { POSITIONS, uid, completeRound, type Project, type Round, } from "@/lib/types";
+import { POSITIONS, appendDrawSnapshot, swapRoomJudgePanels, uid, completeRound, type Project, type Round, } from "@/lib/types";
 import { generatePowerRound, assignJudges, judgeAvailable, validateDraw, } from "@/lib/pairing";
 import { validateSchedule, type generateRandomDraw } from "@/lib/random-draw";
 import { exportCSV, drawRows, exportHTML, exportPPT, exportScheduleZIP, } from "@/lib/export";
@@ -39,6 +40,8 @@ export default function Draw({ p, update, notify, go }: PageProps) {
     }
     const mode = "random-new" as const;
     const [panelRoom, setPanelRoom] = useState<number | null>(null);
+    const [exchangeOpen, setExchangeOpen] = useState(false);
+    const [exchangeRooms, setExchangeRooms] = useState<[number, number]>([0, 2]);
     const [selected, setSelected] = useState(p.rounds.at(-1)?.no ?? 1), [randomOpen, setRandomOpen] = useState(false), [busy, setBusy] = useState(false), [progress, setProgress] = useState(0), [edit, setEdit] = useState<Edit | null>(null), [checking, setChecking] = useState(false), [exporting, setExporting] = useState(false);
     const workerRef = useRef<Worker | null>(null), file = useRef<HTMLInputElement>(null);
     useEffect(() => () => workerRef.current?.terminate(), []);
@@ -78,7 +81,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                 if (errors.length) throw new Error(errors.join('；'));
                 latest.rounds.push(generated);
                 latest.updatedAt = new Date().toISOString();
-                await db.projects.put(latest);
+                await db.projects.put(appendDrawSnapshot(latest, 'generated'));
                 return generated;
             });
             setSelected(r.no);
@@ -187,7 +190,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                     changed: generated.changed,
                     teamOrder: teams.map((t) => t.id), strongTeamIds: teams.filter(t => t.isStrong).map(t => t.id), options, resources:resources ? {...resources,groupCandidates:generated.groupCandidates ?? 1} : undefined,
                 };
-                await update(next);
+                await update(appendDrawSnapshot(next, 'generated'));
                 setSelected(1);
                 setRandomOpen(false);
                 notify(tr("四轮排程已生成，辩位与交手次数校验通过"));
@@ -247,7 +250,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             }
             if (r.bp) Object.assign(r.bp, analyzeBPRound(next, r));
             if (next.randomMeta) delete next.randomMeta.resources;
-            await update(next);
+            await update(appendDrawSnapshot(next, 'edited'));
             setEdit(null);
             notify(tr("调整已保存并通过检查"));
         }
@@ -262,15 +265,32 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             const r = structuredClone(round);
             r.rooms.forEach((room) => (room.judges = []));
             assignJudges(p, r);
-            await update({
+            await update(appendDrawSnapshot({
                 ...p,
                 randomMeta: p.randomMeta ? {...p.randomMeta, resources:undefined} : undefined,
                 rounds: p.rounds.map((old) => (old.id === r.id ? r : old)),
-            });
+            }, 'edited'));
             notify(tr("已分配本轮裁判"));
         }
         catch (e) {
             notify(errorText(e), true);
+        }
+    }
+    async function exchangeJudgePanels() {
+        if (!round || exchangeRooms[0] === exchangeRooms[1]) return;
+        try {
+            if (round.rooms.some(room => room.results.length || room.drafts?.length || room.ballots?.length))
+                throw new Error(tr("已有成绩或裁判评分，不能交换裁判组"));
+            const next = swapRoomJudgePanels(p, round.id, round.rooms[exchangeRooms[0]].id, round.rooms[exchangeRooms[1]].id);
+            const nextRound = next.rounds.find(item => item.id === round.id)!;
+            const errors = validateDraw(next, nextRound).errors;
+            if (errors.length) throw new Error(errors.join("；"));
+            if (next.randomMeta) delete next.randomMeta.resources;
+            await update(appendDrawSnapshot(next, "edited"));
+            setExchangeOpen(false);
+            notify(tr("裁判组已交换"));
+        } catch (error) {
+            notify(errorText(error), true);
         }
     }
     async function exportAction(action: () => void | Promise<void>) {
@@ -286,7 +306,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
         }
     }
     return (<>
-      <PageTitle eyebrow="DRAW & PAIRING" title={tr("对阵编排")} description={tr("合理的对阵，让每一场比赛都值得期待。")} actions={<>{p.rounds.length > 0 && <ReportExport p={p} kind="draw" notify={notify} label={tr("整套赛程")}/>}
+      <PageTitle eyebrow="DRAW & PAIRING" title={tr("对阵编排")} description={tr("合理的对阵，让每一场比赛都值得期待。")} actions={<><DrawHistory p={p} update={update} notify={notify} snapshots={p.drawHistory ?? []}/>{p.rounds.length > 0 && <ReportExport p={p} kind="draw" notify={notify} label={tr("整套赛程")}/>}
             <Button variant="outline" disabled={busy} onClick={() => {
                 setRandomOpen(true);
             }}>
@@ -406,6 +426,10 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                   <Scale size={15}/>
                   {tr("分配裁判")}
                 </Button>
+                {round.rooms.length > 1 && <Button size="sm" variant="ghost" onClick={() => { setExchangeRooms([0, Math.min(2, round.rooms.length - 1)]); setExchangeOpen(true); }} disabled={round.rooms.some(room => room.results.length || room.drafts?.length || room.ballots?.length)}>
+                  <ArrowLeftRight size={15}/>
+                  {tr("交换裁判组")}
+                </Button>}
                 <Button size="sm" variant="outline" onClick={() => go("results")}>
                   {tr("录入成绩")}
                   <ArrowRight size={14}/>
@@ -580,7 +604,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                 return;
             try {
                 const next = await importRoundDraw(f, p, round?.no ?? 1);
-                await update(next);
+                await update(appendDrawSnapshot(next, 'edited'));
                 setSelected(round?.no ?? 1);
                 notify(tr("对阵已导入并保存"));
             }
@@ -592,6 +616,13 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             }
         }}/>
       {panelRoom !== null && round && (<PanelEditor {...{ p, update, notify, go }} round={round} room={round.rooms[panelRoom]} onClose={() => setPanelRoom(null)}/>)}
+      <Modal title={tr("交换裁判组")} description={tr("选择本轮两个赛场，交换双方的完整裁判组。") } open={exchangeOpen} onClose={() => setExchangeOpen(false)}>
+        {round && <div className="entity-form">
+          <label>{tr("赛场一")}<select value={exchangeRooms[0]} onChange={event => setExchangeRooms([Number(event.target.value), exchangeRooms[1]])}>{round.rooms.map((room, index) => <option key={room.id} value={index}>{tr("第 {0} 场", [index + 1])} · {p.venues.find(venue => venue.id === room.venueId)?.name ?? "—"}</option>)}</select></label>
+          <label>{tr("赛场二")}<select value={exchangeRooms[1]} onChange={event => setExchangeRooms([exchangeRooms[0], Number(event.target.value)])}>{round.rooms.map((room, index) => <option key={room.id} value={index}>{tr("第 {0} 场", [index + 1])} · {p.venues.find(venue => venue.id === room.venueId)?.name ?? "—"}</option>)}</select></label>
+          <div className="modal-actions"><Button variant="outline" onClick={() => setExchangeOpen(false)}>{tr("取消")}</Button><Button disabled={exchangeRooms[0] === exchangeRooms[1]} onClick={() => void exchangeJudgePanels()}><ArrowLeftRight size={16}/>{tr("确认交换")}</Button></div>
+        </div>}
+      </Modal>
       <Modal title={tr('强队标签')} open={strongOpen} onClose={() => setStrongOpen(false)}>
         <div className="strong-team-list">{p.teams.map(team => <button type="button" key={team.id} className={team.isStrong ? 'strong-team-option selected' : 'strong-team-option'} aria-pressed={!!team.isStrong} disabled={tagBusy || scoresExist || !team.active} onClick={() => void toggleStrong(team.id)}><span><strong>{team.name}</strong><small>{[team.speaker1, team.speaker2].filter(Boolean).join(' / ')}</small></span>{team.isStrong && <Badge tone="orange">{tr('强队')}</Badge>}{!team.active && <span>{tr('已停用')}</span>}</button>)}</div>
         <div className="modal-actions"><Button onClick={() => setStrongOpen(false)}>{tr('完成')}</Button></div>
