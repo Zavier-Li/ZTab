@@ -1,0 +1,303 @@
+{
+  "format": "ztab",
+  "version": 1,
+  "project": {
+    "id": "cudc-xidian-2026",
+    "name": "2026 CUDC 西安电子科技大学校选赛",
+    "createdAt": "2026-10-22T06:42:39.795941+00:00",
+    "updatedAt": "2026-10-22T06:42:39.795941+00:00",
+    "teams": [
+      {
+        "id": "cudc-team-1",
+        "name": "亚太区最易缺氧华人男女",
+        "speaker1": "龚天余",
+        "speaker2": "刘安然",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      },
+      {
+        "id": "cudc-team-2",
+        "name": "Star Star",
+        "speaker1": "杨奕",
+        "speaker2": "文若茗",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      },
+      {
+        "id": "cudc-team-3",
+        "name": "heriot watt",
+        "speaker1": "周平澜",
+        "speaker2": "赵凯熙",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      },
+      {
+        "id": "cudc-team-4",
+        "name": "好周道",
+        "speaker1": "周彤",
+        "speaker2": "岳好",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      },
+      {
+        "id": "cudc-team-5",
+        "name": "Here We Are",
+        "speaker1": "胡睿哲",
+        "speaker2": "李承倩",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      },
+      {
+        "id": "cudc-team-6",
+        "name": "她不爱你对不队",
+        "speaker1": "刘子威",
+        "speaker2": "侍源",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      },
+      {
+        "id": "cudc-team-7",
+        "name": "你说的",
+        "speaker1": "范泰瑞",
+        "speaker2": "卢乘曦",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      },
+      {
+        "id": "cudc-team-8",
+        "name": "汪汪队",
+        "speaker1": "任书锐",
+        "speaker2": "刘琪",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      },
+      {
+        "id": "cudc-team-9",
+        "name": "book思议",
+        "speaker1": "路惠",
+        "speaker2": "李欣悦",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      },
+      {
+        "id": "cudc-team-10",
+        "name": "针锋相队",
+        "speaker1": "戴博明",
+        "speaker2": "王昊",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      },
+      {
+        "id": "cudc-team-11",
+        "name": "成年印第安",
+        "speaker1": "刘婧蓉",
+        "speaker2": "韩万涛",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      },
+      {
+        "id": "cudc-team-12",
+        "name": "说的都队",
+        "speaker1": "马好歌",
+        "speaker2": "缪依晓",
+        "institution": "西安电子科技大学",
+        "secondLanguage": false,
+        "active": true
+      }
+    ],
+    "judges": [
+      {
+        "id": "cudc-judge-1",
+        "name": "朱琳菲",
+        "institution": "",
+        "rating": 3,
+        "active": true,
+        "workTask": "1,2,4",
+        "workTime": "",
+        "conflictInstitutions": [],
+        "conflictTeams": []
+      },
+      {
+        "id": "cudc-judge-2",
+        "name": "白浩楠",
+        "institution": "",
+        "rating": 3,
+        "active": true,
+        "workTask": "1,3,4",
+        "workTime": "",
+        "conflictInstitutions": [],
+        "conflictTeams": []
+      },
+      {
+        "id": "cudc-judge-3",
+        "name": "范昕瑶",
+        "institution": "",
+        "rating": 3,
+        "active": true,
+        "workTask": "1,2,4",
+        "workTime": "",
+        "conflictInstitutions": [],
+        "conflictTeams": []
+      },
+      {
+        "id": "cudc-judge-4",
+        "name": "李宇轩",
+        "institution": "",
+        "rating": 3,
+        "active": true,
+        "workTask": "1,2,3",
+        "workTime": "",
+        "conflictInstitutions": [],
+        "conflictTeams": []
+      },
+      {
+        "id": "cudc-judge-5",
+        "name": "李一鸣",
+        "institution": "",
+        "rating": 3,
+        "active": true,
+        "workTask": "1,2,3",
+        "workTime": "",
+        "conflictInstitutions": [],
+        "conflictTeams": []
+      },
+      {
+        "id": "cudc-judge-6",
+        "name": "刘一鸣",
+        "institution": "",
+        "rating": 3,
+        "active": true,
+        "workTask": "2,3,4",
+        "workTime": "",
+        "conflictInstitutions": [],
+        "conflictTeams": []
+      },
+      {
+        "id": "cudc-judge-7",
+        "name": "连建华",
+        "institution": "",
+        "rating": 3,
+        "active": true,
+        "workTask": "2,3,4",
+        "workTime": "",
+        "conflictInstitutions": [],
+        "conflictTeams": []
+      },
+      {
+        "id": "cudc-judge-8",
+        "name": "陈弘毅",
+        "institution": "",
+        "rating": 3,
+        "active": true,
+        "workTask": "3,4",
+        "workTime": "",
+        "conflictInstitutions": [],
+        "conflictTeams": []
+      }
+    ],
+    "venues": [
+      {
+        "id": "cudc-venue-1",
+        "name": "C107",
+        "active": true
+      },
+      {
+        "id": "cudc-venue-2",
+        "name": "C110",
+        "active": true
+      },
+      {
+        "id": "cudc-venue-3",
+        "name": "C128",
+        "active": true
+      }
+    ],
+    "rounds": [],
+    "settings": {
+      "panelsPerRoom": 0,
+      "assignTimer": false
+    },
+    "eventPlan": {
+      "timeSlots": [
+        "08:30–10:30",
+        "10:30–12:30",
+        "14:00–16:00",
+        "16:00–18:00"
+      ],
+      "venueIds": [
+        "cudc-venue-1",
+        "cudc-venue-2",
+        "cudc-venue-3"
+      ],
+      "judgePanels": [
+        [
+          [
+            "cudc-judge-1"
+          ],
+          [
+            "cudc-judge-2",
+            "cudc-judge-3"
+          ],
+          [
+            "cudc-judge-4",
+            "cudc-judge-5"
+          ]
+        ],
+        [
+          [
+            "cudc-judge-1",
+            "cudc-judge-4"
+          ],
+          [
+            "cudc-judge-6",
+            "cudc-judge-5"
+          ],
+          [
+            "cudc-judge-7",
+            "cudc-judge-3"
+          ]
+        ],
+        [
+          [
+            "cudc-judge-8",
+            "cudc-judge-4"
+          ],
+          [
+            "cudc-judge-6",
+            "cudc-judge-2"
+          ],
+          [
+            "cudc-judge-7",
+            "cudc-judge-5"
+          ]
+        ],
+        [
+          [
+            "cudc-judge-1",
+            "cudc-judge-2"
+          ],
+          [
+            "cudc-judge-6",
+            "cudc-judge-3"
+          ],
+          [
+            "cudc-judge-8",
+            "cudc-judge-7"
+          ]
+        ]
+      ],
+      "tabOperator": "李加祥"
+    }
+  }
+}

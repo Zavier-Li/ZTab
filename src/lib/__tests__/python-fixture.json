@@ -1,0 +1,132 @@
+{
+  "original": [
+    [
+      [8, 6, 3, 7],
+      [11, 2, 0, 1],
+      [9, 5, 10, 4]
+    ],
+    [
+      [5, 11, 6, 8],
+      [0, 7, 4, 9],
+      [10, 3, 1, 2]
+    ],
+    [
+      [2, 8, 9, 5],
+      [3, 10, 11, 0],
+      [4, 1, 7, 6]
+    ],
+    [
+      [1, 4, 8, 11],
+      [6, 9, 2, 3],
+      [7, 0, 5, 10]
+    ]
+  ],
+  "adjusted": [
+    [
+      [8, 6, 3, 7],
+      [2, 11, 0, 1],
+      [9, 5, 10, 4]
+    ],
+    [
+      [5, 2, 9, 8],
+      [3, 10, 11, 0],
+      [4, 1, 7, 6]
+    ],
+    [
+      [11, 8, 6, 5],
+      [0, 7, 4, 2],
+      [10, 3, 1, 9]
+    ],
+    [
+      [1, 4, 8, 11],
+      [7, 0, 5, 10],
+      [6, 9, 2, 3]
+    ]
+  ],
+  "changed": 8,
+  "names": [
+    "Team 0",
+    "Star Star",
+    "heriot watt",
+    "Team 3",
+    "Team 4",
+    "Team 5",
+    "Team 6",
+    "Team 7",
+    "Team 8",
+    "针锋相队",
+    "Team 10",
+    "Team 11"
+  ],
+  "report": {
+    "distinct_pairs": 54,
+    "repeated_pairs": 18,
+    "max_pair_meetings": 2,
+    "teams": [
+      {
+        "name": "Team 0",
+        "roles": ["CG", "CO", "OG", "OO"],
+        "distinct_opponents": 8
+      },
+      {
+        "name": "Star Star",
+        "roles": ["CO", "OO", "CG", "OG"],
+        "distinct_opponents": 10
+      },
+      {
+        "name": "heriot watt",
+        "roles": ["OG", "OO", "CO", "CG"],
+        "distinct_opponents": 10
+      },
+      {
+        "name": "Team 3",
+        "roles": ["CG", "OG", "OO", "CO"],
+        "distinct_opponents": 9
+      },
+      {
+        "name": "Team 4",
+        "roles": ["CO", "OG", "CG", "OO"],
+        "distinct_opponents": 10
+      },
+      {
+        "name": "Team 5",
+        "roles": ["OO", "OG", "CO", "CG"],
+        "distinct_opponents": 9
+      },
+      {
+        "name": "Team 6",
+        "roles": ["OO", "CO", "CG", "OG"],
+        "distinct_opponents": 9
+      },
+      {
+        "name": "Team 7",
+        "roles": ["CO", "CG", "OO", "OG"],
+        "distinct_opponents": 9
+      },
+      {
+        "name": "Team 8",
+        "roles": ["OG", "CO", "OO", "CG"],
+        "distinct_opponents": 9
+      },
+      {
+        "name": "针锋相队",
+        "roles": ["OG", "CG", "CO", "OO"],
+        "distinct_opponents": 8
+      },
+      {
+        "name": "Team 10",
+        "roles": ["CG", "OO", "OG", "CO"],
+        "distinct_opponents": 8
+      },
+      {
+        "name": "Team 11",
+        "roles": ["OO", "CG", "OG", "CO"],
+        "distinct_opponents": 9
+      }
+    ]
+  },
+  "random": [
+    0.6797492530391477, 0.5792866668325315, 0.8538829995136621,
+    0.048515788781966385, 0.8236100095628272
+  ]
+}
