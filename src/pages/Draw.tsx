@@ -27,8 +27,16 @@ type Edit = {
     value: string;
 };
 export default function Draw({ p, update, notify, go }: PageProps) {
-    const [options, setOptions] = useState<DrawOptions>(p.randomMeta?.options ? { ...p.randomMeta.options, schoolThreshold: 3 } : defaultDrawOptions);
+    const [options, setOptions] = useState<DrawOptions>(p.randomMeta?.options ? { ...p.randomMeta.options, schoolThreshold: 3 } : {...defaultDrawOptions, maxMeetings: Math.min(4, Math.max(2, Math.ceil(12 / Math.max(1, p.teams.filter(t => t.active).length - 1))))});
     const scoresExist = hasAnyScores(p);
+    const [strongOpen, setStrongOpen] = useState(false);
+    const activeTeams = p.teams.filter(t => t.active);
+    const strongTeams = activeTeams.filter(t => t.isStrong);
+    const [tagBusy, setTagBusy] = useState(false);
+    async function toggleStrong(id: string) {
+        setTagBusy(true);
+        try { await db.transaction("rw", db.projects, async () => { const latest = await db.projects.get(p.id); if (!latest || hasAnyScores(latest)) throw new Error(tr("已有成绩，不能修改强队标签")); const team = latest.teams.find(t => t.id === id); if (!team) return; team.isStrong = !team.isStrong; latest.updatedAt = new Date().toISOString(); await db.projects.put(latest); }); } catch(e) { notify(errorText(e), true); } finally { setTagBusy(false); }
+    }
     const mode = "random-new" as const;
     const [panelRoom, setPanelRoom] = useState<number | null>(null);
     const [selected, setSelected] = useState(p.rounds.at(-1)?.no ?? 1), [randomOpen, setRandomOpen] = useState(false), [seed, setSeed] = useState(String(crypto.getRandomValues(new Uint32Array(1))[0])), [busy, setBusy] = useState(false), [progress, setProgress] = useState(0), [edit, setEdit] = useState<Edit | null>(null), [checking, setChecking] = useState(false), [exporting, setExporting] = useState(false);
@@ -44,7 +52,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
     let reportError = "";
     try {
         if (p.randomMeta)
-            report = validateSchedule(p.rounds.map((r) => r.rooms.map((room) => room.teamIds.map((id) => p.randomMeta!.teamOrder.indexOf(id)))), p.randomMeta.teamOrder.map((id) => p.teams.find((t) => t.id === id)!.name));
+            report = validateSchedule(p.rounds.map((r) => r.rooms.map((room) => room.teamIds.map((id) => p.randomMeta!.teamOrder.indexOf(id)))), p.randomMeta.teamOrder.map((id) => p.teams.find((t) => t.id === id)!.name), p.randomMeta.teamOrder.map(id => !!p.randomMeta?.strongTeamIds?.includes(id)), p.randomMeta.options?.maxMeetings ?? 2);
     }
     catch (e) {
         reportError = errorText(e);
@@ -86,8 +94,8 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             return;
         }
         const teams = p.teams.filter((t) => t.active);
-        if (teams.length !== 12) {
-            notify(tr("四轮随机模式需要恰好 12 支启用队伍，当前 {0} 支", [teams.length]), true);
+        if (teams.length < 4 || teams.length % 4) {
+            notify(tr("BP 预排队伍数须为 4 的倍数，当前 {0} 支", [teams.length]), true);
             return;
         }
         const n = Number(seed);
@@ -96,7 +104,8 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             return;
         }
         try {
-            validateDrawOptions(options, teams.map(t => t.institution));
+            validateDrawOptions(options, teams.map(t => t.institution), teams.length);
+            if (p.venues.filter(v => v.active).length < teams.length / 4) throw new Error(tr("需要 {0} 个启用场地，当前只有 {1} 个", [teams.length / 4, p.venues.filter(v => v.active).length]));
         }
         catch (e) {
             notify(errorText(e), true);
@@ -131,23 +140,10 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                 if (!latest || hasAnyScores(latest) || latest.updatedAt !== p.updatedAt)
                     throw new Error(tr('赛事数据已变更，请重新生成'));
                 const next = structuredClone(p);
-                let venues = next.eventPlan
-                    ? next.eventPlan.venueIds
-                        .map((id) => next.venues.find((v) => v.id === id))
-                        .filter((v): v is NonNullable<typeof v> => !!v && v.active)
-                    : next.venues.filter((v) => v.active);
-                for (let i = 1; venues.length < 3; i++) {
-                    const name = ["C107", "C110", "C128"][i - 1] ?? `Room ${i}`;
-                    if (next.venues.some((v) => v.name === name))
-                        continue;
-                    const venue = {
-                        id: uid(),
-                        name,
-                        active: true,
-                    };
-                    next.venues.push(venue);
-                    venues.push(venue);
-                }
+                const neededRooms = teams.length / 4;
+                const usePlan = !!next.eventPlan && next.eventPlan.venueIds.length >= neededRooms && next.eventPlan.venueIds.every(id => next.venues.some(v => v.id === id && v.active));
+                const venues = usePlan ? next.eventPlan!.venueIds.map(id => next.venues.find(v => v.id === id)!) : next.venues.filter(v => v.active);
+                if (venues.length < neededRooms) throw new Error(tr('启用场地数量不足'));
                 const rounds: Round[] = generated.draws.map((rooms, i) => ({
                     id: uid(),
                     no: i + 1,
@@ -162,8 +158,8 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                     })),
                 }));
                 for (const r of rounds) {
-                    if (next.eventPlan) {
-                        const panels = next.eventPlan.judgePanels[r.no - 1];
+                    if (usePlan) {
+                        const panels = next.eventPlan!.judgePanels[r.no - 1];
                         r.rooms.forEach((room, i) => {
                             room.judges = (panels?.[i] ?? []).map((id, j) => {
                                 if (!next.judges.some((a) => a.id === id && a.active))
@@ -179,13 +175,13 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                             throw new Error(errors.join("；"));
                     }
                     else if (next.judges.filter((j) => judgeAvailable(j, r.no)).length >=
-                        3 *
+                        neededRooms *
                             (1 +
                                 next.settings.panelsPerRoom +
                                 Number(next.settings.assignTimer)))
                         assignJudges({ ...next, rounds: rounds.filter(previous => previous.no < r.no) }, r);
                 }
-                const resources = mode === 'random-new' ? optimizeDrawResources(next, rounds, n) : undefined;
+                const resources = mode === 'random-new' ? optimizeDrawResources({...next, eventPlan: usePlan ? next.eventPlan : undefined}, rounds, n) : undefined;
                 next.rounds = rounds;
                 next.randomMeta = {
                     seed: n,
@@ -193,7 +189,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                     original: generated.original,
                     baseline: generated.baseline,
                     changed: generated.changed,
-                    teamOrder: teams.map((t) => t.id), options, resources:resources ? {...resources,groupCandidates:generated.groupCandidates ?? 1} : undefined,
+                    teamOrder: teams.map((t) => t.id), strongTeamIds: teams.filter(t => t.isStrong).map(t => t.id), options, resources:resources ? {...resources,groupCandidates:generated.groupCandidates ?? 1} : undefined,
                 };
                 await update(next);
                 setSelected(1);
@@ -302,7 +298,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                 setRandomOpen(true);
             }}>
               <Shuffle size={16}/>
-              {tr("最优分层随机预排")}
+              {tr("分层随机预排")}
             </Button>
             {!p.randomMeta && p.rounds.length < (p.settings.preliminaryRounds ?? 4) && <Button onClick={() => void power()} disabled={busy || p.rounds.some(r => !completeRound(r) || r.rooms.some(room => room.drafts?.some(d => d.judgeId === 'official')))}>
               <Plus size={16}/>
@@ -320,11 +316,11 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             <ShieldCheck size={24}/>
           </div>
           <div>
-            <strong>{(report.coverage_optimal && (p.randomMeta?.options?.maxMeetings ?? 2) === 2) ? tr("对手覆盖最优已验证") : tr("四轮排程校验通过")}</strong>
+            <strong>{report.coverage_optimal ? tr("对手覆盖最优已验证") : tr("四轮排程校验通过")}</strong>
             <p>
               {tr("每队四辩位各一次 · 种子")}
               {p.randomMeta?.seed} ·{" "}
-              {tr("最优分层随机预排")}
+              {tr("分层随机预排")}
             </p>
           </div>
           <div className="summary-value">
@@ -334,6 +330,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             </b>
             <span>{tr("不同对手 / 队")}</span>
           </div>
+          {report.strength && <div className="summary-value"><b>{report.strength.marked}</b><span>{report.strength.optimal ? tr('遇强次数均衡目标已达成') : tr('强队标签已参与编排')}</span></div>}
           {p.randomMeta?.resources && <div className="summary-value"><b>{p.randomMeta.resources.venueMax}</b><span>{tr('同场地最多次数')}</span></div>}
           {p.randomMeta?.resources && <div className="summary-value"><b>{p.randomMeta.resources.judgeMax}</b><span>{tr('同裁判最多次数')}</span></div>}
           <div className="summary-value">
@@ -368,8 +365,8 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                 setRandomOpen(true);
             }}>
               <></>
-              <Badge tone="orange">{tr("12 队 · 4 轮 · 3 赛场")}</Badge>
-              <h3>{tr("最优分层随机预排")}</h3>
+              <Badge tone="orange">{tr("{0} 队 · 4 轮 · {1} 赛场", [activeTeams.length, activeTeams.length / 4])}</Badge>
+              <h3>{tr("分层随机预排")}</h3>
               <p>
                 {tr("一次生成四轮，先优化对手分组。")}
                 <br />
@@ -474,6 +471,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
                             value: id,
                         })}>
                               <strong>{t.name}</strong>
+                              {p.randomMeta?.strongTeamIds?.includes(id) && <Badge tone="orange">{tr("强队")}</Badge>}
                               {round.bp && analyzeBPRound(p,round).pullups.includes(id) && <Badge tone="orange">{tr('升池')}</Badge>}
                               <p>
                                 {t.speaker1 || "—"} / {t.speaker2 || "—"}
@@ -604,7 +602,11 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             }
         }}/>
       {panelRoom !== null && round && (<PanelEditor {...{ p, update, notify, go }} round={round} room={round.rooms[panelRoom]} onClose={() => setPanelRoom(null)}/>)}
-      <Modal title={tr("最优分层随机预排")} description={tr("恰好 12 支启用队伍，每轮 3 个赛场。分组搜索后，通过二分图完美匹配严格轮换辩位。")} open={randomOpen} onClose={() => {
+      <Modal title={tr('强队标签')} open={strongOpen} onClose={() => setStrongOpen(false)}>
+        <div className="strong-team-list">{p.teams.map(team => <button type="button" key={team.id} className={team.isStrong ? 'strong-team-option selected' : 'strong-team-option'} aria-pressed={!!team.isStrong} disabled={tagBusy || scoresExist || !team.active} onClick={() => void toggleStrong(team.id)}><span><strong>{team.name}</strong><small>{[team.speaker1, team.speaker2].filter(Boolean).join(' / ')}</small></span>{team.isStrong && <Badge tone="orange">{tr('强队')}</Badge>}{!team.active && <span>{tr('已停用')}</span>}</button>)}</div>
+        <div className="modal-actions"><Button onClick={() => setStrongOpen(false)}>{tr('完成')}</Button></div>
+      </Modal>
+      <Modal title={tr("分层随机预排")} description={tr("根据启用队伍和场地编排四轮，每场四队，四个辩位各一次。")} open={randomOpen} onClose={() => {
             if (!busy)
                 setRandomOpen(false);
         }}>
@@ -621,6 +623,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             </div>
           </label>
           <></>
+          <div className="strong-tag-controls"><Button variant="outline" type="button" onClick={() => setStrongOpen(true)} disabled={busy || scoresExist}>{tr('强队标签')} · {strongTeams.length}</Button><div className="strong-tags">{strongTeams.map(team => <Badge key={team.id} tone="orange">{team.name}</Badge>)}</div></div>
           {busy && (<div className="generation-progress">
               <div>
                 <i style={{

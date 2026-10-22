@@ -185,7 +185,7 @@ export async function exportPPT(p: Project, r: Round) {
       { x: 0.5, y: 5.5, w: 12, h: 1, fontSize: 16, color: "6B7280" },
     );
   }
-  await ppt.writeFile({ fileName: `Round-${r.no}-对阵.pptx` });
+  download(await ppt.write({ outputType: "arraybuffer" }) as ArrayBuffer, `Round-${r.no}-对阵.pptx`, "application/vnd.openxmlformats-officedocument.presentationml.presentation");
 }
 function pngBlob(canvas: HTMLCanvasElement) {
   return new Promise<Blob>((resolve, reject) =>
@@ -219,11 +219,11 @@ export async function exportScheduleZIP(p: Project) {
   );
   const teams = meta.teamOrder.map((id) => {
     const t = p.teams.find((t) => t.id === id)!;
-    return { name: t.name, speaker1: t.speaker1, speaker2: t.speaker2 };
+    return { name: t.name, speaker1: t.speaker1, speaker2: t.speaker2, isStrong: !!meta.strongTeamIds?.includes(t.id) };
   });
   const report = validateSchedule(
     draws,
-    teams.map((t) => t.name),
+    teams.map((t) => t.name), teams.map(t => t.isStrong), meta.options?.maxMeetings ?? 2,
   );
   if (report.max_pair_meetings > (meta.options?.maxMeetings??2))
     throw new Error("交手次数超过设定上限");
@@ -246,10 +246,10 @@ export async function exportScheduleZIP(p: Project) {
     XLSX.utils.book_append_sheet(workbook, sheet, `第${r.no}场`);
     const canvas = document.createElement("canvas");
     canvas.width = 2100;
-    canvas.height = 900;
+    canvas.height = 200 + rows.length * 160;
     const ctx = canvas.getContext("2d")!;
     ctx.fillStyle = "#fff";
-    ctx.fillRect(0, 0, 2100, 900);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = "#20252b";
     canvasText(ctx, p.name, 40, 65, 2000, 36, true);
     ctx.fillStyle = "#777";
@@ -321,8 +321,9 @@ export async function exportScheduleZIP(p: Project) {
         swapped_baseline: meta.baseline,
         changed_role_slots: meta.changed,
         mode: meta.mode,options:meta.options,resource_optimization:meta.resources,
+        round_venues: p.rounds.map(r => r.rooms.map(room => p.venues.find(v => v.id === room.venueId)!.name)),
         venues: p.venues
-          .filter((v) => p.rounds[0].rooms.some((r) => r.venueId === v.id))
+          .filter((v) => p.rounds.some(round => round.rooms.some(room => room.venueId === v.id)))
           .map((v) => v.name),
       },
       null,

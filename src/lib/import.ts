@@ -200,7 +200,7 @@ export function validateProject(input: unknown): Project {
         (k) => typeof t[k as keyof Team] === "string",
       ) ||
       typeof t.active !== "boolean" ||
-      typeof t.secondLanguage !== "boolean"
+      typeof t.secondLanguage !== "boolean" || (t.isStrong !== undefined && typeof t.isStrong !== "boolean")
     )
       throw new Error("队伍字段格式不正确");
   for (const j of p.judges)
@@ -273,8 +273,8 @@ export function validateProject(input: unknown): Project {
     const { teamOrder } = p.randomMeta;
     if (
       !Array.isArray(teamOrder) ||
-      teamOrder.length !== 12 ||
-      new Set(teamOrder).size !== 12 ||
+      teamOrder.length < 4 || teamOrder.length % 4 !== 0 ||
+      new Set(teamOrder).size !== teamOrder.length ||
       teamOrder.some((id) => !p.teams.some((t) => t.id === id))
     )
       throw new Error("随机排程队伍顺序不正确");
@@ -284,6 +284,7 @@ export function validateProject(input: unknown): Project {
     const report = validateSchedule(
       draws,
       teamOrder.map((id) => p.teams.find((t) => t.id === id)!.name),
+      teamOrder.map(id => !!p.randomMeta?.strongTeamIds?.includes(id)), p.randomMeta.options?.maxMeetings ?? 2,
     );
     if (report.max_pair_meetings > (p.randomMeta.options?.maxMeetings??2))
       throw new Error("交手次数超过设定上限");
@@ -307,9 +308,10 @@ export async function importBackup(file: File): Promise<Project> {
   };
 }
 function importSchedule(raw: {
-  teams: { name: string; speaker1?: string; speaker2?: string }[];
+  teams: { name: string; speaker1?: string; speaker2?: string; isStrong?: boolean }[];
   draws: Draws;
   venues?: string[];
+  round_venues?: string[][];
   seed?: number;
   mode?: string;
   original_draws?: Draws;
@@ -319,7 +321,7 @@ function importSchedule(raw: {
 }) {
   const report = validateSchedule(
     raw.draws,
-    raw.teams.map((t) => t.name),
+    raw.teams.map((t) => t.name), raw.teams.map(t => !!t.isStrong), raw.options?.maxMeetings ?? 2,
   );
   if (report.max_pair_meetings > (raw.options?.maxMeetings??2)) throw new Error("交手次数超过设定上限");
   const p = newProject("导入四轮随机排程");
@@ -328,11 +330,12 @@ function importSchedule(raw: {
     name: t.name,
     speaker1: t.speaker1 ?? "",
     speaker2: t.speaker2 ?? "",
+    isStrong: !!t.isStrong,
     institution: "",
     secondLanguage: false,
     active: true,
   }));
-  p.venues = (raw.venues ?? ["C107", "C110", "C128"]).map((name) => ({
+  p.venues = (raw.venues ?? Array.from({length:raw.draws[0].length},(_,i)=>`Room ${i+1}`)).map((name) => ({
     id: uid(),
     name,
     active: true,
@@ -343,7 +346,7 @@ function importSchedule(raw: {
     createdAt: new Date().toISOString(),
     rooms: rooms.map((ids, i) => ({
       id: uid(),
-      venueId: p.venues[i].id,
+      venueId: (raw.round_venues ? p.venues.find(v => v.name === raw.round_venues?.[r]?.[i]) : p.venues[i])?.id ?? (()=>{throw new Error("排程引用了不存在的场地")})(),
       teamIds: ids.map((t) => p.teams[t].id),
       judges: [],
       results: [],
@@ -355,7 +358,7 @@ function importSchedule(raw: {
     original: raw.original_draws ?? raw.draws,
     baseline: raw.swapped_baseline ?? null,
     changed: raw.changed_role_slots ?? 0,
-    teamOrder: p.teams.map((t) => t.id),options:raw.options,
+    teamOrder: p.teams.map((t) => t.id), strongTeamIds: p.teams.filter(t => t.isStrong).map(t => t.id),options:raw.options,
   };
   return p;
 }
@@ -563,6 +566,7 @@ export async function importRoundDraw(file: File, p: Project, no: number) {
         ),
       ),
       m.teamOrder.map((id) => p.teams.find((t) => t.id === id)!.name),
+      m.teamOrder.map(id => !!m.strongTeamIds?.includes(id)), m.options?.maxMeetings ?? 2,
     );
     if (report.max_pair_meetings > (m.options?.maxMeetings??2))
       throw new Error("交手次数超过设定上限");

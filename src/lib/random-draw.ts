@@ -89,209 +89,103 @@ export type Draws = number[][][];
 export interface DrawOptions {maxMeetings:number;schoolAvoidance:'off'|'prefer'|'strict';schoolThreshold:number;searchDepth:'standard'|'deep'}
 export const defaultDrawOptions:DrawOptions={maxMeetings:2,schoolAvoidance:'prefer',schoolThreshold:3,searchDepth:'standard'};
 export const normalizeInstitution=(s:string)=>s.toLowerCase().replace(/[\s\p{P}]/gu,'').replace(/(教师|学生|老师|teacher|student)/gi,'');
-export function schoolCollisions(draws:Draws,institutions:string[]){const schools=institutions.map(normalizeInstitution);let count=0;for(const round of draws)for(const room of round)for(let a=0;a<4;a++)for(let b=a+1;b<4;b++)if(schools[room[a]]&&schools[room[a]]===schools[room[b]])count++;return count}
-export function validateDrawOptions(options:DrawOptions,institutions:string[]){if(!Number.isInteger(options.maxMeetings)||options.maxMeetings<1||options.maxMeetings>4)throw new Error('最多交手次数必须为 1–4 的整数');if(options.maxMeetings===1)throw new Error('12 支队伍打四轮，每队需要 12 次对手席位，但只有 11 个不同对手，最多交手 1 次无解');if(!Number.isInteger(options.schoolThreshold)||options.schoolThreshold<3||options.schoolThreshold>12)throw new Error('同校回避启用学校数须为 3–12 的整数');if(!['off','prefer','strict'].includes(options.schoolAvoidance)||!['standard','deep'].includes(options.searchDepth))throw new Error('随机排程参数无效');const schools=institutions.map(normalizeInstitution).filter(Boolean);if(new Set(schools).size>=options.schoolThreshold&&options.schoolAvoidance==='strict'&&schools.some(s=>schools.filter(x=>x===s).length>3))throw new Error('严格同校回避无解：同一学校超过 3 支队伍，但每轮只有 3 个赛场')}
+export function schoolCollisions(draws:Draws,institutions:string[]){let count=0;for(const round of draws)for(const room of round)for(let a=0;a<4;a++)for(let b=a+1;b<4;b++)if(normalizeInstitution(institutions[room[a]]??'')&&normalizeInstitution(institutions[room[a]])===normalizeInstitution(institutions[room[b]]??''))count++;return count;}
+export function validateDrawOptions(options:DrawOptions,institutions:string[],teamCount=institutions.length||12){
+ if(teamCount<4||teamCount%4)throw new Error('BP 四轮预排需要至少 4 支启用队伍，且队伍数为 4 的倍数');
+ if(!Number.isInteger(options.maxMeetings)||options.maxMeetings<1||options.maxMeetings>4)throw new Error('最多交手次数必须为 1–4 的整数');
+ if(12>(teamCount-1)*options.maxMeetings)throw new Error('当前队伍数与交手上限无解：四轮每队需要 12 个对手席位');
+ if(!Number.isInteger(options.schoolThreshold)||options.schoolThreshold<3||options.schoolThreshold>Math.max(12,teamCount))throw new Error('同校回避启用学校数无效');
+ if(!['off','prefer','strict'].includes(options.schoolAvoidance)||!['standard','deep'].includes(options.searchDepth))throw new Error('随机排程参数无效');
+ const schools=institutions.map(normalizeInstitution).filter(Boolean);
+ if(new Set(schools).size>=options.schoolThreshold&&options.schoolAvoidance==='strict'&&schools.some(s=>schools.filter(x=>x===s).length>teamCount/4))throw new Error('严格同校回避无解：同校队伍数超过每轮赛场数');
+}
+export interface StrengthReport {marked:number;room_balanced:boolean;strong_range:number;other_range:number;exposure_variance:number;optimal:boolean;encounters:number[]}
 export interface DrawReport {
-  distinct_pairs: number;
-  repeated_pairs: number;
-  max_pair_meetings: number;
-  coverage_optimal: boolean;
-  teams: { name: string; roles: string[]; distinct_opponents: number }[];
+ distinct_pairs:number;repeated_pairs:number;max_pair_meetings:number;coverage_optimal:boolean;
+ strength?:StrengthReport;
+ teams:{name:string;roles:string[];distinct_opponents:number}[];
 }
-export function pairCounts(draws: Draws) {
-  const counts = new Uint8Array(144);
-  for (const rooms of draws)
-    for (const room of rooms)
-      for (let a = 0; a < 4; a++)
-        for (let b = a + 1; b < 4; b++) {
-          const x = Math.min(room[a], room[b]),
-            y = Math.max(room[a], room[b]);
-          counts[x * 12 + y]++;
-        }
-  return counts;
+const countTeams=(draws:Draws)=>draws[0]?.flat().length??0;
+export function pairCounts(draws:Draws){const n=countTeams(draws),counts=new Uint16Array(n*n);for(const rr of draws)for(const room of rr)for(let a=0;a<4;a++)for(let b=a+1;b<4;b++){const x=Math.min(room[a],room[b]),y=Math.max(room[a],room[b]);counts[x*n+y]++;}return counts;}
+function strengthMetrics(draws:Draws,flags:boolean[]):StrengthReport|undefined {
+ const n=countTeams(draws),marked=flags.filter(Boolean).length;if(!marked||marked===n)return undefined;
+ const encounters=Array(n).fill(0);let roomBalanced=true;
+ for(const rr of draws){const counts=rr.map(room=>room.filter(t=>flags[t]).length);if(Math.max(...counts)-Math.min(...counts)>1)roomBalanced=false;rr.forEach((room,v)=>room.forEach(t=>encounters[t]+=counts[v]-Number(flags[t])));}
+ const groups=[encounters.filter((_,i)=>flags[i]),encounters.filter((_,i)=>!flags[i])];
+ const ranges=groups.map(g=>Math.max(...g)-Math.min(...g));
+ const variance=groups.reduce((s,g)=>{const mean=g.reduce((a,b)=>a+b,0)/g.length;return s+g.reduce((a,x)=>a+(x-mean)**2,0);},0);
+ return {marked,room_balanced:roomBalanced,strong_range:ranges[0],other_range:ranges[1],exposure_variance:variance,optimal:roomBalanced&&ranges.every(x=>x<=1),encounters};
 }
-export function scheduleScore(draws: Draws,options:DrawOptions=defaultDrawOptions,institutions:string[]=[]) {
-  const counts = pairCounts(draws),
-    opponents = new Uint8Array(12);
-  let distinct = 0,
-    excess = 0;
-  for (let a = 0; a < 12; a++)
-    for (let b = a + 1; b < 12; b++) {
-      const n = counts[a * 12 + b];
-      if (n) {
-        distinct++;
-        opponents[a]++;
-        opponents[b]++;
-        excess += Math.max(0, n - options.maxMeetings);
-      }
-    }
-  return (
-    100 * (72 - distinct) +
-    10 * opponents.reduce((s, n) => s + (n - 9) ** 2, 0) +
-    1000 * excess + (new Set(institutions.map(normalizeInstitution).filter(Boolean)).size>=options.schoolThreshold&&options.schoolAvoidance!=='off'?schoolCollisions(draws,institutions)*(options.schoolAvoidance==='strict'?100000:20):0)
-  );
+function coverageUpper(n:number,maxMeetings:number){
+ let upper=Math.min(n*(n-1)/2,n*6);
+ if(maxMeetings===2){const rooms=n/4,a=Math.floor(4/rooms),b=4%rooms;const overlap=rooms*(rooms*a*(a-1)/2+b*a);upper=Math.min(upper,n*6-6*overlap);}
+ return upper;
 }
-export function optimizeGroups(
-  seed: number,
-  progress?: (n: number) => void,
-  options:DrawOptions=defaultDrawOptions,
-  institutions:string[]=[],
-): Draws {
-  validateDrawOptions(options,institutions);
-  const rng = new PythonRandom(seed);
-  let best: Draws | null = null,
-    bestScore = Infinity;
-  const attempts=options.searchDepth==='deep'?120:40;
-  for (let restart = 0; restart < attempts; restart++) {
-    const rounds = Array.from({ length: 4 }, () => {
-      const ids = rng.shuffle(Array.from({ length: 12 }, (_, i) => i));
-      return [ids.slice(0, 4), ids.slice(4, 8), ids.slice(8, 12)];
-    });
-    if(options.schoolAvoidance==='strict'&&new Set(institutions.map(normalizeInstitution).filter(Boolean)).size>=options.schoolThreshold){for(let retry=0;schoolCollisions([rounds[0]],institutions)&&retry<500;retry++){const ids=rng.shuffle(Array.from({length:12},(_,i)=>i));rounds[0]=[ids.slice(0,4),ids.slice(4,8),ids.slice(8,12)]}}
-    let current = scheduleScore(rounds,options,institutions);
-    for (let iteration = 0; iteration < 12000; iteration++) {
-      const r = 1 + rng.below(3),
-        [a, b] = rng.sample3(),
-        i = rng.below(4),
-        j = rng.below(4);
-      [rounds[r][a][i], rounds[r][b][j]] = [rounds[r][b][j], rounds[r][a][i]];
-      const candidate = scheduleScore(rounds,options,institutions),
-        temperature = Math.max(2, 90 * (1 - iteration / 12000));
-      if (
-        candidate <= current ||
-        rng.random() < Math.exp((current - candidate) / temperature)
-      )
-        current = candidate;
-      else
-        [rounds[r][a][i], rounds[r][b][j]] = [rounds[r][b][j], rounds[r][a][i]];
-      if (current < bestScore) {
-        bestScore = current;
-        best = structuredClone(rounds);
-        if (current === 1800) return best;
-      }
-    }
-    progress?.((restart + 1) / attempts);
+export function assignRoles(groups:Draws):Draws {
+ const n=countTeams(groups),perRound=n/4,rooms=groups.flat().map(r=>new Set(r)),assignments=rooms.map(()=>Array<number>(4));
+ for(let role=0;role<4;role++){
+  const matched=new Map<number,number>();
+  function augment(team:number,visited:Set<number>):boolean {for(let room=0;room<rooms.length;room++){if(!rooms[room].has(team)||visited.has(room))continue;visited.add(room);if(!matched.has(room)||augment(matched.get(room)!,visited)){matched.set(room,team);return true;}}return false;}
+  for(let team=0;team<n;team++)if(!augment(team,new Set()))throw new Error('辩位二分图匹配失败');
+  for(const[room,team]of matched){assignments[room][role]=team;rooms[room].delete(team);}
+ }
+ return Array.from({length:4},(_,i)=>assignments.slice(i*perRound,(i+1)*perRound));
+}
+export function validateSchedule(draws:Draws,names:string[],strong:boolean[]=[],meetingLimit?:number):DrawReport {
+ const n=names.length;if(n<4||n%4||new Set(names).size!==n||draws.length!==4)throw new Error('四轮预排需要不同队伍、队伍数为 4 的倍数及 4 轮对阵');
+ const roles=names.map(()=>[] as string[]),opponents=names.map(()=>new Set<number>());
+ for(const rr of draws){if(rr.length!==n/4||rr.some(r=>r.length!==4)||rr.flat().sort((a,b)=>a-b).join()!==Array.from({length:n},(_,i)=>i).join())throw new Error('每轮必须让全部队伍各上场一次，每场恰好 4 队');for(const room of rr)room.forEach((t,pos)=>{roles[t].push(['OG','OO','CG','CO'][pos]);room.forEach(o=>{if(o!==t)opponents[t].add(o);});});}
+ if(roles.some(r=>new Set(r).size!==4))throw new Error('每队必须分别担任一次 OG、OO、CG、CO');
+ const counts=[...pairCounts(draws)].filter(Boolean),max=Math.max(...counts),upper=coverageUpper(n,meetingLimit??(max<=2?2:max)),average=2*upper/n;
+ return {distinct_pairs:counts.length,repeated_pairs:counts.filter(c=>c>1).length,max_pair_meetings:max,coverage_optimal:counts.length===upper&&opponents.every(o=>o.size>=Math.floor(average)&&o.size<=Math.ceil(average)),strength:strengthMetrics(draws,strong),teams:names.map((name,i)=>({name,roles:roles[i],distinct_opponents:opponents[i].size}))};
+}
+const balancedDesign:Draws=[[[4,8,1,3],[11,2,9,6],[7,5,0,10]],[[6,4,7,5],[10,11,3,2],[0,9,8,1]],[[9,6,10,4],[1,3,11,7],[2,0,5,8]],[[8,7,4,11],[5,1,2,9],[3,10,6,0]]];
+function relabelDesign(rng:PythonRandom):Draws {const labels=rng.shuffle(Array.from({length:12},(_,i)=>i));return rng.shuffle(balancedDesign.map(rr=>rng.shuffle(rr.map(room=>room.map(t=>labels[t])))));}
+function objective(draws:Draws,options:DrawOptions,schools:string[],strong:boolean[]){
+ const n=countTeams(draws),counts=pairCounts(draws),opponents=Array(n).fill(0);let excess=0,distinct=0;
+ for(let a=0;a<n;a++)for(let b=a+1;b<n;b++){const c=counts[a*n+b];if(c){distinct++;opponents[a]++;opponents[b]++;excess+=Math.max(0,c-options.maxMeetings);}}
+ const schoolActive=new Set(schools.map(normalizeInstitution).filter(Boolean)).size>=options.schoolThreshold&&options.schoolAvoidance!=='off';const clashes=schoolActive?schoolCollisions(draws,schools):0;
+ const strength=strengthMetrics(draws,strong);const upper=coverageUpper(n,options.maxMeetings),target=2*upper/n;
+ const spread=opponents.reduce((s,x)=>s+(x-target)**2,0);
+ const cost=[excess,options.schoolAvoidance==='strict'?clashes:0,strength&&!strength.room_balanced?1:0,strength?Math.max(strength.strong_range,strength.other_range):0,strength?.exposure_variance??0,upper-distinct,spread,options.schoolAvoidance==='prefer'?clashes:0];
+ return {cost,energy:excess*1000000+(options.schoolAvoidance==='strict'?clashes*100000:0)+(strength&&!strength.room_balanced?100000:0)+(strength?Math.max(strength.strong_range,strength.other_range)*1000+strength.exposure_variance*50:0)+(upper-distinct)*10+spread+(options.schoolAvoidance==='prefer'?clashes*0.1:0),certified:excess===0&&clashes===0&&(!strength||strength.optimal)&&distinct===upper&&spread<1e-8};
+}
+const compare=(a:number[],b:number[])=>a.reduce((c,n,i)=>c||n-b[i],0);
+export function scheduleScore(draws:Draws,options:DrawOptions=defaultDrawOptions,institutions:string[]=[],strong:boolean[]=[]){return objective(draws,options,institutions,strong).energy;}
+export function optimizeGroups(seed:number,progress:((n:number)=>void)|undefined,options:DrawOptions=defaultDrawOptions,institutions:string[]=[],teamCount=institutions.length||12,strong:boolean[]=[]):Draws {
+ validateDrawOptions(options,institutions,teamCount);
+ const rng=new PythonRandom(seed),rooms=teamCount/4,marked=Array.from({length:teamCount},(_,i)=>i).filter(i=>strong[i]),other=Array.from({length:teamCount},(_,i)=>i).filter(i=>!strong[i]);
+ let best:Draws|null=null,bestMetric:ReturnType<typeof objective>|null=null;
+ function consider(d:Draws){const metric=objective(d,options,institutions,strong);if(!bestMetric||compare(metric.cost,bestMetric.cost)<0){best=structuredClone(d);bestMetric=metric;}return metric;}
+ if(teamCount===12&&options.maxMeetings>=2){for(let i=0;i<(marked.length&&other.length?800:options.searchDepth==='deep'?24000:6000);i++){const d=relabelDesign(rng);const counts=d.map(rr=>rr.map(room=>room.filter(t=>strong[t]).length));if(marked.length&&other.length&&counts.some(c=>Math.max(...c)-Math.min(...c)>1))continue;const m=consider(d);if(m.certified){progress?.(1);return best!;}}}
+ const attempts=options.searchDepth==='deep'?28:10,iterations=Math.min(14000,4000+teamCount*80);
+ for(let restart=0;restart<attempts;restart++){
+  const rounds:Draws=restart===0&&best?structuredClone(best):Array.from({length:4},()=>{
+   const candidates=Array.from({length:rooms},()=>[] as number[]),s=rng.shuffle([...marked]),w=rng.shuffle([...other]),order=rng.shuffle(Array.from({length:rooms},(_,i)=>i));
+   order.forEach((v,i)=>{const take=Math.floor(marked.length/rooms)+Number(i<marked.length%rooms);candidates[v].push(...s.splice(0,take));});
+   for(const v of order)while(candidates[v].length<4)candidates[v].push(w.pop()!);
+   return candidates;
+  });
+  let current=consider(rounds);
+  if(current.certified){progress?.(1);return best!;}
+  if(rooms===1)break;
+  for(let iteration=0;iteration<iterations;iteration++){
+   const r=rng.below(4),a=rng.below(rooms);let b=rng.below(rooms-1);if(b>=a)b++;const i=rng.below(4),j=rng.below(4);
+   const x=rounds[r][a][i],y=rounds[r][b][j];
+   if(Boolean(strong[x])!==Boolean(strong[y])){const ca=rounds[r][a].filter(t=>strong[t]).length,cb=rounds[r][b].filter(t=>strong[t]).length,delta=Number(!!strong[y])-Number(!!strong[x]);if(ca+delta<Math.floor(marked.length/rooms)||ca+delta>Math.ceil(marked.length/rooms)||cb-delta<Math.floor(marked.length/rooms)||cb-delta>Math.ceil(marked.length/rooms))continue;}
+   [rounds[r][a][i],rounds[r][b][j]]=[y,x];
+   const candidate=objective(rounds,options,institutions,strong),temperature=Math.max(0.5,1500*(1-iteration/iterations)**3);
+   if(candidate.energy<=current.energy||rng.random()<Math.exp((current.energy-candidate.energy)/temperature))current=candidate;else [rounds[r][a][i],rounds[r][b][j]]=[x,y];
+   if(!bestMetric||compare(current.cost,bestMetric.cost)<0){consider(rounds);if(current.certified){progress?.(1);return best!;}}
   }
-  if (!best || Math.max(...pairCounts(best)) > options.maxMeetings)
-    throw new Error('未找到满足交手次数上限的排程，请更换种子或增加搜索强度');
-  if(options.schoolAvoidance==='strict'&&new Set(institutions.map(normalizeInstitution).filter(Boolean)).size>=options.schoolThreshold&&schoolCollisions(best,institutions))throw new Error('未找到满足严格同校回避的排程，请更换种子或增加搜索强度');
-  return best;
+  progress?.((restart+1)/attempts);
+ }
+ if(!best||!bestMetric||(bestMetric as ReturnType<typeof objective>).cost.slice(0,3).some(x=>x>0))throw new Error('未找到满足交手上限、强队分布和回避约束的排程，请调整参数或增加搜索强度');
+ return best;
 }
-export function assignRoles(groups: Draws): Draws {
-  const rooms = groups.flat().map((r) => new Set(r)),
-    assignments = rooms.map(() => Array<number>(4));
-  for (let role = 0; role < 4; role++) {
-    const matched = new Map<number, number>();
-    function augment(team: number, visited: Set<number>): boolean {
-      for (let room = 0; room < rooms.length; room++) {
-        if (!rooms[room].has(team) || visited.has(room)) continue;
-        visited.add(room);
-        if (!matched.has(room) || augment(matched.get(room)!, visited)) {
-          matched.set(room, team);
-          return true;
-        }
-      }
-      return false;
-    }
-    for (let team = 0; team < 12; team++)
-      if (!augment(team, new Set())) throw new Error("辩位二分图匹配失败");
-    for (const [room, team] of matched) {
-      assignments[room][role] = team;
-      rooms[room].delete(team);
-    }
-  }
-  return Array.from({ length: 4 }, (_, i) =>
-    assignments.slice(i * 3, i * 3 + 3),
-  );
-}
-export function validateSchedule(draws: Draws, names: string[]): DrawReport {
-  if (names.length !== 12 || new Set(names).size !== 12 || draws.length !== 4)
-    throw new Error("最优分层随机预排需要恰好 12 支不同队伍及 4 轮对阵");
-  const roles = names.map(() => [] as string[]),
-    opponents = names.map(() => new Set<number>());
-  for (const rooms of draws) {
-    if (
-      rooms.length !== 3 ||
-      rooms.some((r) => r.length !== 4) ||
-      rooms
-        .flat()
-        .sort((a, b) => a - b)
-        .join() !== Array.from({ length: 12 }, (_, i) => i).join()
-    )
-      throw new Error("每轮必须包含 3 个赛场，12 支队伍各上场一次");
-    for (const room of rooms)
-      room.forEach((t, r) => {
-        roles[t].push(["OG", "OO", "CG", "CO"][r]);
-        room.forEach((o) => {
-          if (o !== t) opponents[t].add(o);
-        });
-      });
-  }
-  if (roles.some((r) => new Set(r).size !== 4))
-    throw new Error("每队必须分别担任一次 OG、OO、CG、CO");
-  const counts = [...pairCounts(draws)].filter(Boolean);
-  return {
-    distinct_pairs: counts.length,
-    repeated_pairs: counts.filter((n) => n > 1).length,
-    max_pair_meetings: Math.max(...counts),
-    coverage_optimal: Math.max(...counts) === 2 && counts.length === 54 && opponents.every(o => o.size === 9),
-    teams: names.map((name, i) => ({
-      name,
-      roles: roles[i],
-      distinct_opponents: opponents[i].size,
-    })),
-  };
-}
-// A verified optimal 12-team design. Random relabelling, round and room
-// permutations preserve its 54 distinct pairs and nine opponents per team.
-const balancedDesign: Draws = [
-  [[4,8,1,3],[11,2,9,6],[7,5,0,10]],
-  [[6,4,7,5],[10,11,3,2],[0,9,8,1]],
-  [[9,6,10,4],[1,3,11,7],[2,0,5,8]],
-  [[8,7,4,11],[5,1,2,9],[3,10,6,0]],
-];
-
-function balancedGroups(seed: number, progress: ((n: number) => void) | undefined, options: DrawOptions, institutions: string[]): Draws {
-  validateDrawOptions(options, institutions);
-  const rng = new PythonRandom(seed);
-  const schoolActive = new Set(institutions.map(normalizeInstitution).filter(Boolean)).size >= options.schoolThreshold && options.schoolAvoidance !== 'off';
-  let best: Draws | null = null, bestSchool = Infinity;
-  // Always keep a certified design available. Relabelling searches school
-  // arrangements without trading away the coverage or position guarantee.
-  const attempts = schoolActive ? (options.searchDepth === 'deep' ? 24000 : 6000) : 1;
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    const labels = rng.shuffle(Array.from({length:12}, (_, i) => i));
-    const candidate = rng.shuffle(balancedDesign.map(round => rng.shuffle(round.map(room => room.map(id => labels[id])))));
-    const penalty = schoolActive ? schoolCollisions(candidate, institutions) : 0;
-    if (penalty < bestSchool) { bestSchool = penalty; best = candidate; }
-    if (!penalty) break;
-    if (attempt % 200 === 0) progress?.(attempt / attempts);
-  }
-  if (options.schoolAvoidance === 'strict' && bestSchool > 0) {
-    // Additional hard constraints may exclude this design family. Search the
-    // full group space and report the resulting coverage without certification.
-    return optimizeGroups(seed, progress, options, institutions);
-  }
-  progress?.(1);
-  return best!;
-}
-
-export function generateRandomDraw(
-  seed: number,
-  names: string[],
-  mode: "random-new",
-  progress?: (n: number) => void,
-  options:DrawOptions=defaultDrawOptions,
-  institutions:string[]=[],
-) {
-  const groups = options.maxMeetings === 2
-    ? balancedGroups(seed, progress, options, institutions)
-    : optimizeGroups(seed, progress, options, institutions);
-  const original = assignRoles(groups);
-  const report = validateSchedule(original, names);
-  report.coverage_optimal = report.coverage_optimal && options.maxMeetings === 2;
-  if (report.max_pair_meetings > options.maxMeetings)
-    throw new Error('交手次数超过设定上限，请调整参数或更换种子');
-  if(options.schoolAvoidance==='strict'&&new Set(institutions.map(normalizeInstitution).filter(Boolean)).size>=options.schoolThreshold&&schoolCollisions(original,institutions))throw new Error('无法满足严格同校回避，请调整参数');
-  return { draws: original, baseline: null, changed: 0, original, report, seed, mode,options };
+export function generateRandomDraw(seed:number,names:string[],mode:'random-new',progress?:((n:number)=>void),options:DrawOptions=defaultDrawOptions,institutions:string[]=[],strong:boolean[]=[]){
+ if(new Set(names).size!==names.length)throw new Error('队伍名称不能重复');
+ const groups=optimizeGroups(seed,progress,options,institutions,names.length,strong),draws=assignRoles(groups),report=validateSchedule(draws,names,strong,options.maxMeetings);
+ if(report.max_pair_meetings>options.maxMeetings)throw new Error('交手次数超过设定上限');
+ return {draws,original:draws,baseline:null,changed:0,report,seed,mode,options};
 }

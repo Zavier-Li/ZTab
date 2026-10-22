@@ -2417,3 +2417,11 @@ th,td{white-space:normal;overflow-wrap:anywhere;word-break:normal;}
 html { scroll-padding-bottom:calc(32px + env(safe-area-inset-bottom, 0px)); }
 .reset-event-button { color:#b42318; border-color:#e6b0aa; }
 :root[data-theme=dark] .reset-event-button { color:#ef9b91; border-color:#6d3834; }
+.strong-tag-controls { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
+.strong-tags { display:flex; gap:8px; flex-wrap:wrap; flex:1; min-width:0; }
+.strong-team-list { display:flex; flex-direction:column; gap:8px; margin-top:22px; max-height:55dvh; overflow-y:auto; }
+.strong-team-option { display:flex; align-items:center; justify-content:space-between; gap:12px; border:1px solid var(--line); border-radius:6px; padding:11px 14px; text-align:left; }
+.strong-team-option.selected { border-color:var(--accent); background:var(--accent-soft); }
+.strong-team-option>span:first-child { min-width:0; overflow-wrap:anywhere; }
+.strong-team-option small { display:block; color:var(--muted); margin-top:4px; font-size:16px; }
+.strong-team-option:disabled { opacity:0.55; }

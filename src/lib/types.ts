@@ -8,6 +8,7 @@ export interface Team {
   speaker2: string;
   institution: string;
   secondLanguage: boolean;
+  isStrong?: boolean;
   active: boolean;
 }
 export interface Judge {
@@ -94,7 +95,8 @@ export interface Project {
     changed: number;
     teamOrder: string[];
     options?:DrawOptions;
-    resources?: {method:'exhaustive-room-permutations'; assignments:number; venueMax:number; judgeMax:number; conflictCount:number; cost:number[]; groupCandidates?:number};
+    strongTeamIds?:string[];
+    resources?: {method:'exhaustive-room-permutations'|'room-swap-search'; assignments:number; venueMax:number; judgeMax:number; conflictCount:number; cost:number[]; groupCandidates?:number};
   };
 }
 export const uid = () => crypto.randomUUID();
