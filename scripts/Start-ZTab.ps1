@@ -1,4 +1,4 @@
-param([switch]$NoOpen)
+﻿param([switch]$NoOpen)
 
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -45,10 +45,12 @@ try {
     Push-Location $projectRoot
     try {
         if (-not (Test-Path -LiteralPath $viteEntry)) {
+            Write-Host '正在安装网页依赖，首次启动需要一些时间…'
             $install = Start-Process -FilePath $node -ArgumentList @(('"' + $npmCli + '"'), 'ci') -WorkingDirectory $projectRoot -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $logDir 'install.log') -RedirectStandardError (Join-Path $logDir 'install-error.log')
             if ($install.ExitCode -ne 0) { throw 'Dependency installation failed. See output\launcher\install-error.log.' }
         }
 
+        Write-Host '正在构建网页，通常需要十几秒…'
         $build = Start-Process -FilePath $node -ArgumentList @(('"' + $npmCli + '"'), 'run', 'build') -WorkingDirectory $projectRoot -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $logDir 'build.log') -RedirectStandardError (Join-Path $logDir 'build-error.log')
         if ($build.ExitCode -ne 0) { throw 'Build failed. See output\launcher\build-error.log.' }
 
@@ -61,6 +63,7 @@ try {
             if (Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue) { throw 'The previous ZTab server could not be stopped.' }
         }
 
+        Write-Host '网页构建完成，正在启动本地服务…'
         $server = Start-Process -FilePath $node -ArgumentList @(('"' + $viteEntry + '"'), 'preview', '--host', '127.0.0.1', '--port', '5173', '--strictPort') -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir 'server.log') -RedirectStandardError (Join-Path $logDir 'server-error.log')
         $deadline = [DateTime]::UtcNow.AddSeconds(30)
         while (-not (Test-ZTabServer)) {
@@ -68,6 +71,7 @@ try {
             if ([DateTime]::UtcNow -gt $deadline) { throw 'The local server did not start within 30 seconds. See output\launcher\server.log.' }
             Start-Sleep -Milliseconds 250
         }
+        Write-Host '本地服务已就绪，正在打开浏览器…'
         Open-ZTab
     } finally { Pop-Location }
 } catch {
