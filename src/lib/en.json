@@ -139,6 +139,7 @@
   "已有成绩或裁判评分，不能恢复对阵历史": "Cannot restore draw history after results or adjudicator ballots exist",
   "历史版本引用的队伍、裁判或场地已不存在，无法恢复": "This version references a team, adjudicator or venue that no longer exists",
   "编辑保存": "Edit saved",
+  "初始版本": "Existing schedule",
   "还没有对阵历史": "No draw history yet",
   "重新生成": "Regenerated",
   "第 {0} 轮": "Round {0}",

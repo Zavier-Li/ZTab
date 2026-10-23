@@ -40,7 +40,8 @@ export function DrawHistory({ p, update, notify, snapshots }: Pick<PageProps, 'p
     }
   }
 
-  const titleFor = (snapshot: DrawSnapshot) => snapshot.name || `${tr(snapshot.action === 'generated' ? '重新生成' : snapshot.action === 'restored' ? '恢复版本' : '编辑保存')} · ${new Date(snapshot.savedAt).toLocaleString()}`;
+  const actionLabel = (snapshot: DrawSnapshot) => snapshot.action === 'baseline' ? '初始版本' : snapshot.action === 'generated' ? '重新生成' : snapshot.action === 'restored' ? '恢复版本' : '编辑保存';
+  const titleFor = (snapshot: DrawSnapshot) => snapshot.name || `${tr(actionLabel(snapshot))} · ${new Date(snapshot.savedAt).toLocaleString()}`;
 
   return <>
     <Button variant="outline" onClick={() => { setSelectedId(null); setOpen(true); }}>
@@ -58,7 +59,7 @@ export function DrawHistory({ p, update, notify, snapshots }: Pick<PageProps, 'p
             </form> : <>
               <button type="button" className="draw-history-select" onClick={() => setSelectedId(snapshot.id)}>
                 <strong>{titleFor(snapshot)}</strong>
-                <span>{snapshot.name ? `${tr(snapshot.action === 'generated' ? '重新生成' : snapshot.action === 'restored' ? '恢复版本' : '编辑保存')} · ` : ''}{snapshot.rounds.length} {tr('轮')}</span>
+                <span>{snapshot.name ? `${tr(actionLabel(snapshot))} · ` : ''}{snapshot.rounds.length} {tr('轮')}</span>
               </button>
               <Button variant="ghost" size="icon" aria-label={tr('重命名')} title={tr('重命名')} onClick={() => { setName(snapshot.name ?? ''); setRenamingId(snapshot.id); }}><Pencil size={16}/></Button>
             </>}
@@ -66,7 +67,7 @@ export function DrawHistory({ p, update, notify, snapshots }: Pick<PageProps, 'p
         </div>
         {selected && <section className="draw-history-detail" aria-label={tr('快照详情')}>
           <header>
-            <div><strong>{titleFor(selected)}</strong><small>{new Date(selected.savedAt).toLocaleString()} · {tr(selected.action === 'generated' ? '重新生成' : selected.action === 'restored' ? '恢复版本' : '编辑保存')}</small></div>
+            <div><strong>{titleFor(selected)}</strong><small>{new Date(selected.savedAt).toLocaleString()} · {tr(actionLabel(selected))}</small></div>
           </header>
           {selected.rounds.map(round => <article className="draw-history-round" key={round.id}>
             <h3>{tr('第 {0} 轮', [round.no])}{round.timeSlot ? <small>{round.timeSlot}</small> : null}</h3>

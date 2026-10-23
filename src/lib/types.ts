@@ -88,7 +88,7 @@ export interface DrawSnapshotRound {
 export interface DrawSnapshot {
   id: string;
   savedAt: string;
-  action: "generated" | "edited" | "restored";
+  action: "baseline" | "generated" | "edited" | "restored";
   name?: string;
   rounds: DrawSnapshotRound[];
   teams: Team[];

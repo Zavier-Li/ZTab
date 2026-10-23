@@ -1,5 +1,5 @@
 import Dexie, { type Table } from "dexie";
-import { newProject, type Project } from "./types";
+import { appendDrawSnapshot, newProject, type Project } from "./types";
 import cudc from "../data/cudc.json";
 class ZTabDB extends Dexie {
   projects!: Table<Project, string>;
@@ -17,12 +17,18 @@ export async function saveProject(project: Project) {
 export async function initialize(preferredId?: string | null) {
   return db.transaction("rw", db.projects, async () => {
     const configured = await db.projects.get(cudc.id);
-    if (!configured) {
-      await db.projects.add(cudc as Project);
-      return cudc.id;
+    let projectId: string;
+    if (!configured) await db.projects.add(cudc as Project);
+    if (preferredId && (await db.projects.get(preferredId))) {
+      projectId = preferredId;
+    } else {
+      projectId = (await db.projects.orderBy("updatedAt").last())!.id;
     }
-    if (preferredId && (await db.projects.get(preferredId))) return preferredId;
-    return (await db.projects.orderBy("updatedAt").last())!.id;
+    const project = await db.projects.get(projectId);
+    if (project?.rounds.length && !project.drawHistory?.length) {
+      await db.projects.put(appendDrawSnapshot(project, "baseline"));
+    }
+    return projectId;
   });
 }
 export function demoProject() {
