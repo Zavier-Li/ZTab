@@ -2,9 +2,10 @@ import {describe,it,expect} from 'vitest';
 import {demoProject} from '../db';
 import {generateRandomDraw,defaultDrawOptions} from '../random-draw';
 import {optimizeDrawResources} from '../draw-resources';
-import {validateProject,importBackup} from '../import';
-import {uid} from '../types';
+import {validateProject,importBackup,importRoundDraw} from '../import';
+import {uid,POSITIONS} from '../types';
 import JSZip from 'jszip';
+import * as XLSX from 'xlsx';
 describe('通用预排资源与备份',()=>{
  it('20队使用七个实际场地，资源搜索不改变队伍及辩位',()=>{
   const p=demoProject();p.teams=Array.from({length:20},(_,i)=>({...p.teams[i%12],id:uid(),name:`Team${i}`,isStrong:i<7}));p.venues=Array.from({length:7},(_,i)=>({id:uid(),name:`V${i}`,active:true}));
@@ -31,6 +32,29 @@ describe('通用预排资源与备份',()=>{
   const imported=await importBackup({name:'正式赛程.zip',arrayBuffer:async()=>data} as File);
   expect(imported.teams).toHaveLength(12);expect(imported.teams.filter(t=>t.isStrong)).toHaveLength(4);
   expect(imported.rounds).toHaveLength(4);expect(imported.rounds[0].rooms[0].venueId).toBe(imported.venues[0].id);
+  expect(validateProject(imported)).toBe(imported);
+ });
+ it('对阵页导入完整赛程ZIP时一次读取四轮工作表',async()=>{
+  const p=demoProject();
+  const workbook=XLSX.utils.book_new();
+  for(let round=1;round<=4;round++){
+   const rows=[['2026 CUDC',''],['Venue','OG','OO','CG','CO','Adjudicators']];
+   for(let room=0;room<3;room++){
+    const teamCells=POSITIONS.map((_,position)=>{
+     const team=p.teams[room*4+(position+round-1)%4];
+     return `${team.name}\n${team.speaker1} / ${team.speaker2}`;
+    });
+    const judges=p.judges.slice(room*2,room*2+2);
+    rows.push([p.venues[room].name,...teamCells,`Chair: ${judges[0].name}\nPanel: ${judges[1].name}`]);
+   }
+   XLSX.utils.book_append_sheet(workbook,XLSX.utils.aoa_to_sheet(rows),`第${round}场`);
+  }
+  const zip=new JSZip();
+  zip.file('正式赛程/四场对阵表.xlsx',XLSX.write(workbook,{type:'array',bookType:'xlsx'}));
+  const data=await zip.generateAsync({type:'arraybuffer'});
+  const imported=await importRoundDraw({name:'正式赛程.zip',arrayBuffer:async()=>data} as File,p,1);
+  expect(imported.rounds.map(r=>r.no)).toEqual([1,2,3,4]);
+  expect(imported.rounds.every(r=>r.rooms.length===3)).toBe(true);
   expect(validateProject(imported)).toBe(imported);
  });
 });

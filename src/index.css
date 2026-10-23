@@ -645,6 +645,11 @@ svg {
   color: var(--muted);
   border-top: 1px solid var(--line);
 }
+.draw-page.drag-over {
+  outline: 3px dashed var(--accent);
+  outline-offset: -8px;
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
 .panel-foot > .saved-dot {
   margin-left: auto;
 }

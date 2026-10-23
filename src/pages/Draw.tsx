@@ -44,6 +44,7 @@ export default function Draw({ p, update, notify, go }: PageProps) {
     const [exchangeRooms, setExchangeRooms] = useState<[number, number]>([0, 2]);
     const [selected, setSelected] = useState(p.rounds.at(-1)?.no ?? 1), [randomOpen, setRandomOpen] = useState(false), [busy, setBusy] = useState(false), [progress, setProgress] = useState(0), [edit, setEdit] = useState<Edit | null>(null), [checking, setChecking] = useState(false), [exporting, setExporting] = useState(false);
     const workerRef = useRef<Worker | null>(null), file = useRef<HTMLInputElement>(null);
+    const [fileDragOver, setFileDragOver] = useState(false);
     useEffect(() => () => workerRef.current?.terminate(), []);
     useEffect(() => {
         if (!p.rounds.some((r) => r.no === selected))
@@ -305,7 +306,33 @@ export default function Draw({ p, update, notify, go }: PageProps) {
             setExporting(false);
         }
     }
-    return (<>
+    async function loadDrawFile(f: File) {
+        setBusy(true);
+        try {
+            const next = await importRoundDraw(f, p, round?.no ?? 1);
+            await update(appendDrawSnapshot(next, 'edited'));
+            setSelected(round?.no ?? 1);
+            notify(tr("对阵已导入并保存"));
+        } catch (e) {
+            notify(errorText(e), true);
+        } finally {
+            setBusy(false);
+            if (file.current) file.current.value = "";
+        }
+    }
+    return (<div className={fileDragOver ? "draw-page drag-over" : "draw-page"}
+      onDragOver={(e) => {
+          if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); setFileDragOver(true); }
+      }}
+      onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setFileDragOver(false);
+      }}
+      onDrop={(e) => {
+          e.preventDefault();
+          setFileDragOver(false);
+          const dropped = e.dataTransfer.files[0];
+          if (dropped) void loadDrawFile(dropped);
+      }}>
       <PageTitle eyebrow="DRAW & PAIRING" title={tr("对阵编排")} description={tr("合理的对阵，让每一场比赛都值得期待。")} actions={<><DrawHistory p={p} update={update} notify={notify} snapshots={p.drawHistory ?? []}/>{p.rounds.length > 0 && <ReportExport p={p} kind="draw" notify={notify} label={tr("整套赛程")}/>}
             <Button variant="outline" disabled={busy} onClick={() => {
                 setRandomOpen(true);
@@ -390,9 +417,9 @@ export default function Draw({ p, update, notify, go }: PageProps) {
           </div>
           <div className="panel-foot">
             <Upload size={16}/>
-            <></>
+            {tr("可拖入完整赛程 ZIP，或选择 CSV / Excel 对阵表。")}
             <Button variant="ghost" size="sm" onClick={() => file.current?.click()}>
-              {tr("导入首轮")}
+              {tr("导入对阵文件")}
             </Button>
           </div>
         </Panel>) : (<>
@@ -598,22 +625,11 @@ export default function Draw({ p, update, notify, go }: PageProps) {
               </TableFrame>
             </Panel>)}
         </>)}
-      <input ref={file} type="file" className="hidden" accept=".csv,.xlsx,.xlsm" aria-label={tr("导入首轮对阵")} onChange={async (e) => {
+      <input ref={file} type="file" className="hidden" accept=".csv,.xlsx,.xlsm,.zip" aria-label={tr("导入对阵文件")} onChange={async (e) => {
             const f = e.target.files?.[0];
             if (!f)
                 return;
-            try {
-                const next = await importRoundDraw(f, p, round?.no ?? 1);
-                await update(appendDrawSnapshot(next, 'edited'));
-                setSelected(round?.no ?? 1);
-                notify(tr("对阵已导入并保存"));
-            }
-            catch (e) {
-                notify(errorText(e), true);
-            }
-            finally {
-                e.target.value = "";
-            }
+            await loadDrawFile(f);
         }}/>
       {panelRoom !== null && round && (<PanelEditor {...{ p, update, notify, go }} round={round} room={round.rooms[panelRoom]} onClose={() => setPanelRoom(null)}/>)}
       <Modal title={tr("交换裁判组")} description={tr("选择本轮两个赛场，交换双方的完整裁判组。") } open={exchangeOpen} onClose={() => setExchangeOpen(false)}>
@@ -717,5 +733,5 @@ export default function Draw({ p, update, notify, go }: PageProps) {
               </>)}
           </div>)}
       </Modal>
-    </>);
+    </div>);
 }

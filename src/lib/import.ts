@@ -3,6 +3,7 @@ import {
   uid,
   POSITIONS,
   type Project,
+  type Round,
   type Team,
   type Judge,
 } from "./types";
@@ -31,14 +32,23 @@ function uniqueNames(items: { name: string }[]) {
   if (new Set(names).size !== names.length)
     throw new Error("导入文件存在重复名称，请先处理重复行");
 }
-export async function readRecords(file: File): Promise<RecordRow[]> {
+export async function readRecords(file: File, sheetName?: string): Promise<RecordRow[]> {
   const XLSX = await import("xlsx");
   const data = await file.arrayBuffer();
   const w = file.name.toLowerCase().endsWith(".csv")
     ? XLSX.read(new TextDecoder("utf-8").decode(data), { type: "string" })
     : XLSX.read(data, { type: "array" });
   if (!w.SheetNames.length) throw new Error("文件没有工作表");
-  return XLSX.utils.sheet_to_json<RecordRow>(w.Sheets[w.SheetNames[0]], {
+  const sheet = sheetName ? w.Sheets[sheetName] : w.Sheets[w.SheetNames[0]];
+  if (!sheet) throw new Error(`Excel 文件中找不到工作表：${sheetName}`);
+  const matrix = sheetName
+    ? XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: "" })
+    : [];
+  const venueHeaderRow = matrix.findIndex((row) =>
+    row.some((cell) => ["venue", "场地", "房间"].includes(normalized(String(cell ?? "").trim()))),
+  );
+  return XLSX.utils.sheet_to_json<RecordRow>(sheet, {
+    ...(venueHeaderRow >= 0 ? { range: venueHeaderRow } : {}),
     defval: "",
     raw: false,
   });
@@ -472,9 +482,9 @@ async function importSQLite(file: File): Promise<Project> {
     source.close();
   }
 }
-export async function importFirstRound(file: File, p: Project) {
+export async function importFirstRound(file: File, p: Project, sheetName?: string) {
   if (p.rounds.length) throw new Error("只能在尚无轮次时导入首轮对阵");
-  const rows = await readRecords(file);
+  const rows = await readRecords(file, sheetName);
   if (!rows.length) throw new Error("没有对阵数据");
   const next = structuredClone(p);
   const r = {
@@ -538,25 +548,51 @@ export async function importFirstRound(file: File, p: Project) {
   return next;
 }
 export async function importRoundDraw(file: File, p: Project, no: number) {
+  const isZip = file.name.toLowerCase().endsWith(".zip");
+  const existingRounds = isZip ? p.rounds : p.rounds.filter((r) => r.no === no);
+  if (existingRounds.some((r) => r.rooms.some(
+    (room) => room.results.length || room.drafts?.length || (room.ballots?.length ?? 0) > 0,
+  )))
+    throw new Error(isZip ? "已有轮次包含成绩或裁判评分，不能用 ZIP 覆盖" : "本轮已有正式成绩或裁判评分，不能覆盖对阵");
   const old = p.rounds.find((r) => r.no === no);
-  if (
-    old?.rooms.some(
-      (room) => room.results.length || room.drafts?.length || (room.ballots?.length ?? 0) > 0,
-    )
-  )
-    throw new Error("本轮已有正式成绩或裁判评分，不能覆盖对阵");
-  if (!old && no !== (p.rounds.at(-1)?.no ?? 0) + 1)
+  if (!isZip && !old && no !== (p.rounds.at(-1)?.no ?? 0) + 1)
     throw new Error("只能导入已有轮次或下一轮");
-  const imported = await importFirstRound(file, {
-    ...p,
-    rounds: [],
-    randomMeta: undefined,
-  });
-  const round = { ...imported.rounds[0], no, bp:old?.bp };
+  let sourceFile = file;
+  let workbookSheets: string[] | undefined;
+  if (isZip) {
+    const { default: JSZip } = await import("jszip");
+    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const workbookPath = Object.keys(zip.files).find(
+      (path) => !zip.files[path].dir && path.split("/").at(-1) === "四场对阵表.xlsx",
+    );
+    if (!workbookPath) throw new Error("ZIP 中未找到四场对阵表.xlsx");
+    const workbook = zip.file(workbookPath)!;
+    sourceFile = new File([await workbook.async("arraybuffer")], "四场对阵表.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    workbookSheets = [1, 2, 3, 4].map((roundNo) => `第${roundNo}场`);
+  }
+  const roundNumbers = workbookSheets ? [1, 2, 3, 4] : [no];
+  let venues = p.venues;
+  const importedRounds: Round[] = [];
+  for (const roundNo of roundNumbers) {
+    const imported = await importFirstRound(sourceFile, {
+      ...p,
+      venues,
+      rounds: [],
+      randomMeta: undefined,
+    }, workbookSheets?.[roundNo - 1]);
+    venues = imported.venues;
+    importedRounds.push({
+      ...imported.rounds[0],
+      no: roundNo,
+      bp: p.rounds.find((r) => r.no === roundNo)?.bp,
+    });
+  }
   const next = {
     ...p,
-    venues: imported.venues,
-    rounds: [...p.rounds.filter((r) => r.no !== no), round].sort(
+    venues,
+    rounds: [...p.rounds.filter((r) => !roundNumbers.includes(r.no)), ...importedRounds].sort(
       (a, b) => a.no - b.no,
     ),
   };
