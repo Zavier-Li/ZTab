@@ -4,6 +4,8 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $siteUrl = 'http://127.0.0.1:5173'
 $logDir = Join-Path $projectRoot 'output\launcher'
+$viteEntry = Join-Path $projectRoot 'node_modules\vite\bin\vite.js'
+$ownedServerPid = $null
 $startupLock = $null
 $ownsLock = $false
 
@@ -23,15 +25,15 @@ try {
     $startupLock = New-Object System.Threading.Mutex($false, 'Local\ZTab-Launcher-5173')
     $ownsLock = $startupLock.WaitOne(0)
     if (-not $ownsLock) { exit 0 }
-    if (Test-ZTabServer) { Open-ZTab; exit 0 }
-
-    $listener = New-Object System.Net.Sockets.TcpClient
-    try {
-        $listener.Connect('127.0.0.1', 5173)
-        throw 'Port 5173 is used by another application. Close that application and try again.'
-    } catch [System.Net.Sockets.SocketException] {
-        # The fixed local port is available.
-    } finally { $listener.Dispose() }
+    $listener = Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($listener) {
+        $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)" -ErrorAction SilentlyContinue
+        if ($process -and $process.CommandLine -like "*$viteEntry*") {
+            $ownedServerPid = [int]$listener.OwningProcess
+        } else {
+            throw 'Port 5173 is used by another application. Close that application and try again.'
+        }
+    }
 
     $node = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
     $npm = (Get-Command npm.cmd -ErrorAction SilentlyContinue).Source
@@ -42,23 +44,21 @@ try {
     New-Item -ItemType Directory -Path $logDir -Force | Out-Null
     Push-Location $projectRoot
     try {
-        $viteEntry = Join-Path $projectRoot 'node_modules\vite\bin\vite.js'
         if (-not (Test-Path -LiteralPath $viteEntry)) {
             $install = Start-Process -FilePath $node -ArgumentList @(('"' + $npmCli + '"'), 'ci') -WorkingDirectory $projectRoot -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $logDir 'install.log') -RedirectStandardError (Join-Path $logDir 'install-error.log')
             if ($install.ExitCode -ne 0) { throw 'Dependency installation failed. See output\launcher\install-error.log.' }
         }
 
-        $builtIndex = Join-Path $projectRoot 'dist\index.html'
-        $needsBuild = -not (Test-Path -LiteralPath $builtIndex)
-        if (-not $needsBuild) {
-            $buildTime = (Get-Item -LiteralPath $builtIndex).LastWriteTimeUtc
-            $inputs = @(Get-ChildItem -LiteralPath (Join-Path $projectRoot 'src'), (Join-Path $projectRoot 'public') -Recurse -File)
-            $inputs += Get-Item -LiteralPath 'package.json', 'package-lock.json', 'vite.config.ts', 'tsconfig.json', 'index.html'
-            $needsBuild = @($inputs | Where-Object { $_.LastWriteTimeUtc -gt $buildTime }).Count -gt 0
-        }
-        if ($needsBuild) {
-            $build = Start-Process -FilePath $node -ArgumentList @(('"' + $npmCli + '"'), 'run', 'build') -WorkingDirectory $projectRoot -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $logDir 'build.log') -RedirectStandardError (Join-Path $logDir 'build-error.log')
-            if ($build.ExitCode -ne 0) { throw 'Build failed. See output\launcher\build-error.log.' }
+        $build = Start-Process -FilePath $node -ArgumentList @(('"' + $npmCli + '"'), 'run', 'build') -WorkingDirectory $projectRoot -WindowStyle Hidden -Wait -PassThru -RedirectStandardOutput (Join-Path $logDir 'build.log') -RedirectStandardError (Join-Path $logDir 'build-error.log')
+        if ($build.ExitCode -ne 0) { throw 'Build failed. See output\launcher\build-error.log.' }
+
+        if ($ownedServerPid) {
+            Stop-Process -Id $ownedServerPid -Force
+            $stopDeadline = [DateTime]::UtcNow.AddSeconds(10)
+            while ((Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue) -and [DateTime]::UtcNow -lt $stopDeadline) {
+                Start-Sleep -Milliseconds 200
+            }
+            if (Get-NetTCPConnection -LocalAddress '127.0.0.1' -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue) { throw 'The previous ZTab server could not be stopped.' }
         }
 
         $server = Start-Process -FilePath $node -ArgumentList @(('"' + $viteEntry + '"'), 'preview', '--host', '127.0.0.1', '--port', '5173', '--strictPort') -WorkingDirectory $projectRoot -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $logDir 'server.log') -RedirectStandardError (Join-Path $logDir 'server-error.log')
