@@ -17,7 +17,7 @@ function Test-ZTabServer {
 }
 
 function Open-ZTab {
-    if (-not $NoOpen) { Start-Process $siteUrl }
+    if (-not $NoOpen) { Start-Process -FilePath $siteUrl -WindowStyle Normal }
 }
 
 try {
