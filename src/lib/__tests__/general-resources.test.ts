@@ -3,7 +3,7 @@ import {demoProject} from '../db';
 import {generateRandomDraw,defaultDrawOptions} from '../random-draw';
 import {optimizeDrawResources} from '../draw-resources';
 import {validateProject,importBackup,importRoundDraw} from '../import';
-import {uid,POSITIONS} from '../types';
+import {uid,POSITIONS,hasSubsequentPowerRound} from '../types';
 import JSZip from 'jszip';
 import * as XLSX from 'xlsx';
 describe('通用预排资源与备份',()=>{
@@ -36,6 +36,7 @@ describe('通用预排资源与备份',()=>{
  });
  it('对阵页导入完整赛程ZIP时一次读取四轮工作表',async()=>{
   const p=demoProject();
+  p.rounds=Array.from({length:4},(_,i)=>({id:`old-bp-${i+1}`,no:i+1,createdAt:'',rooms:[],bp:{version:1 as const,seed:42,brackets:[],pullups:[],positionCost:0,priorPullupCost:0,repeatedPairs:0,repeatPositionTeams:[]}}));
   const workbook=XLSX.utils.book_new();
   for(let round=1;round<=4;round++){
    const rows=[['2026 CUDC',''],['Venue','OG','OO','CG','CO','Adjudicators']];
@@ -55,6 +56,8 @@ describe('通用预排资源与备份',()=>{
   const imported=await importRoundDraw({name:'正式赛程.zip',arrayBuffer:async()=>data} as File,p,1);
   expect(imported.rounds.map(r=>r.no)).toEqual([1,2,3,4]);
   expect(imported.rounds.every(r=>r.rooms.length===3)).toBe(true);
+  expect(imported.rounds.some(r=>r.bp)).toBe(false);
+  expect(hasSubsequentPowerRound(imported,1)).toBe(false);
   expect(validateProject(imported)).toBe(imported);
  });
 });

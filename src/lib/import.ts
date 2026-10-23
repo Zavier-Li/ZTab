@@ -586,7 +586,7 @@ export async function importRoundDraw(file: File, p: Project, no: number) {
     importedRounds.push({
       ...imported.rounds[0],
       no: roundNo,
-      bp: p.rounds.find((r) => r.no === roundNo)?.bp,
+      bp: workbookSheets ? undefined : old?.bp,
     });
   }
   const next = {
