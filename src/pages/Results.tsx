@@ -7,7 +7,7 @@ import { useRef, useState, type FormEvent } from "react";
 import { ArrowRight, Save, CheckCircle2, ClipboardList, LockKeyhole, Upload, Download, Check, } from "lucide-react";
 import { PageTitle, Panel, Badge, Empty, type PageProps, } from "@/components/shared";
 import { Button } from "@/components/ui/button";
-import { POSITIONS, completeRound, type Room, type Round, type Result, } from "@/lib/types";
+import { POSITIONS, completeRound, hasSubsequentPowerRound, type Room, type Round, type Result, } from "@/lib/types";
 import { validateResults } from "@/lib/standings";
 import { parseQuickRanks, importScores } from "@/lib/score-import";
 import { exportCSV } from "@/lib/export";
@@ -17,7 +17,7 @@ export default function Results(props: PageProps) {
     const [selected, setSelected] = useState(p.rounds.find((r) => !completeRound(r))?.no ?? p.rounds.at(-1)?.no ?? 1), [view, setView] = useState("entry"), [revision, setRevision] = useState(0);
     const file = useRef<HTMLInputElement>(null);
     const r = p.rounds.find((r) => r.no === selected) ?? p.rounds.at(-1);
-    const locked = !!r && !p.randomMeta && p.rounds.some((other) => other.no > r.no);
+    const locked = !!r && hasSubsequentPowerRound(p, r.no);
     function template() {
         if (!r)
             return;

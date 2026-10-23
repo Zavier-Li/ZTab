@@ -154,6 +154,7 @@ export const completeRound = (r: Round) =>
   );
 
 export const hasAnyScores=(p:Project)=>p.rounds.some(r=>r.rooms.some(room=>room.results.length>0||(room.ballots?.length??0)>0||(room.drafts?.length??0)>0));
+export const hasSubsequentPowerRound=(p:Project,no:number)=>p.rounds.some(r=>r.no>no&&!!r.bp);
 
 export function appendDrawSnapshot(project: Project, action: DrawSnapshot["action"]): Project {
   const next = structuredClone(project);

@@ -1,5 +1,5 @@
 import { db } from './db';
-import type { Room, ScoreDraft, Result } from './types';
+import { hasSubsequentPowerRound, type Room, type ScoreDraft, type Result } from './types';
 import { validateResults } from './standings';
 import { parseQuickRanks } from './score-import';
 
@@ -23,7 +23,7 @@ export async function persistScoreDraft(projectId: string, roundId: string, room
     const round = p?.rounds.find(r => r.id === roundId);
     const room = round?.rooms.find(r => r.id === roomId);
     if (!p || !round || !room) throw new Error('找不到比赛');
-    if (!p.randomMeta && p.rounds.some(r => r.no > round.no)) throw new Error('本轮成绩已锁定');
+    if (hasSubsequentPowerRound(p, round.no)) throw new Error('本轮成绩已锁定');
     if (draft.judgeId !== 'official' && !room.judges.some(j => j.id === draft.judgeId && j.role !== 'Timer')) throw new Error('裁判不在本场评分组');
     const empty = ![draft.quick, ...draft.ranks, ...draft.score1, ...draft.score2].some(s => s.trim());
     const results: Result[] = room.teamIds.map((teamId, i) => ({ teamId, rank: Number(draft.ranks[i]),

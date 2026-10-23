@@ -1,4 +1,4 @@
-import { type Project, type Result } from "./types";
+import { hasSubsequentPowerRound, type Project, type Result } from "./types";
 import { readRecords, value } from "./import";
 import { validateResults } from "./standings";
 export async function importScores(file: File, p: Project) {
@@ -21,7 +21,7 @@ export function applyScoreRows(rows: Record<string, unknown>[], p: Project) {
       team = next.teams.find((t) => t.name === name);
     if (!round || !v || !team)
       throw new Error(`找不到轮次、场地或队伍：${no} / ${venue} / ${name}`);
-    if (!next.randomMeta && next.rounds.some((r) => r.no > no))
+    if (hasSubsequentPowerRound(next, no))
       throw new Error(`第 ${no} 轮已有后续成绩配对，不能修改评分`);
     const room = round.rooms.find(
       (room) => room.venueId === v.id && room.teamIds.includes(team.id),
