@@ -1648,6 +1648,10 @@ td strong {
   padding: 25px;
   text-align: center;
 }
+.import-drop-active {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+}
 .import-drop > svg {
   color: var(--muted);
 }

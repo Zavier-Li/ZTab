@@ -11,7 +11,7 @@ import { errorText } from "@/lib/utils";
 export default function Data({ p, update, notify, go, selectProject, }: {
     selectProject: (id: string) => void;
 } & PageProps) {
-    const file = useRef<HTMLInputElement>(null), [busy, setBusy] = useState(false);
+    const file = useRef<HTMLInputElement>(null), [busy, setBusy] = useState(false), [dragging, setDragging] = useState(false);
     async function load(f: File) {
         setBusy(true);
         try {
@@ -82,17 +82,25 @@ export default function Data({ p, update, notify, go, selectProject, }: {
       <PageTitle eyebrow="DATA & BACKUP" title={tr("数据中心")} description={tr("导入、迁移、备份。赛事数据始终在你手中。")}/>
       <div className="data-columns">
         <Panel title={tr("导入赛事项目")} description={tr("从旧项目继续，或还原完整备份。")}>
-          <div className="import-drop">
+          <div className={`import-drop${dragging ? " import-drop-active" : ""}`}
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragging(false);
+              const dropped = e.dataTransfer.files[0];
+              if (dropped) void load(dropped);
+            }}>
             <Upload size={29}/>
             <h3>{tr("选择本地赛事文件")}</h3>
-            <p>{tr("支持 ZTab JSON、排程 JSON 和旧版 tournament.db")}</p>
+            <p>{tr("将赛程 ZIP 拖到这里，或选择 JSON、ZIP、tournament.db 文件")}</p>
             <Button disabled={busy} onClick={() => file.current?.click()}>
               <FolderPlus size={16}/>
               {busy ? tr("正在校验并导入…") : tr("选择文件")}
             </Button>
             <small>{tr("导入创建独立赛事，不覆盖现有项目。")}</small>
           </div>
-          <input type="file" accept=".json,.db" className="hidden" ref={file} aria-label={tr("导入赛事项目")} onChange={(e) => {
+          <input type="file" accept=".json,.zip,.db" className="hidden" ref={file} aria-label={tr("导入赛事项目")} onChange={(e) => {
             if (e.target.files?.[0])
                 void load(e.target.files[0]);
         }}/>

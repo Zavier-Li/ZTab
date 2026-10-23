@@ -4,6 +4,7 @@ import {generateRandomDraw,defaultDrawOptions} from '../random-draw';
 import {optimizeDrawResources} from '../draw-resources';
 import {validateProject,importBackup} from '../import';
 import {uid} from '../types';
+import JSZip from 'jszip';
 describe('通用预排资源与备份',()=>{
  it('20队使用七个实际场地，资源搜索不改变队伍及辩位',()=>{
   const p=demoProject();p.teams=Array.from({length:20},(_,i)=>({...p.teams[i%12],id:uid(),name:`Team${i}`,isStrong:i<7}));p.venues=Array.from({length:7},(_,i)=>({id:uid(),name:`V${i}`,active:true}));
@@ -20,6 +21,16 @@ describe('通用预排资源与备份',()=>{
   const raw={teams:names.map((name,i)=>({name,isStrong:i<3})),draws:g.draws,venues:['A','B','C','D','E'],round_venues:Array.from({length:4},()=>['B','C','D','E']),options:defaultDrawOptions};
   const imported=await importBackup({name:'schedule.json',text:async()=>JSON.stringify(raw)} as File);
   expect(imported.teams.filter(t=>t.isStrong)).toHaveLength(3);expect(imported.rounds[0].rooms[0].venueId).toBe(imported.venues[1].id);
+  expect(validateProject(imported)).toBe(imported);
+ });
+ it('可直接导入包含排程JSON的赛程ZIP',async()=>{
+  const names=Array.from({length:12},(_,i)=>`Team${i}`);const g=generateRandomDraw(2929491163,names,'random-new');
+  const raw={teams:names.map((name,i)=>({name,speaker1:`S${i}`,speaker2:`D${i}`,isStrong:i<4})),draws:g.draws,venues:['C107','C110','C128'],round_venues:Array.from({length:4},()=>['C107','C110','C128']),options:defaultDrawOptions};
+  const zip=new JSZip();zip.file('正式赛程/排程与校验.json',JSON.stringify(raw));
+  const data=await zip.generateAsync({type:'arraybuffer'});
+  const imported=await importBackup({name:'正式赛程.zip',arrayBuffer:async()=>data} as File);
+  expect(imported.teams).toHaveLength(12);expect(imported.teams.filter(t=>t.isStrong)).toHaveLength(4);
+  expect(imported.rounds).toHaveLength(4);expect(imported.rounds[0].rooms[0].venueId).toBe(imported.venues[0].id);
   expect(validateProject(imported)).toBe(imported);
  });
 });

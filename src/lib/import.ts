@@ -291,7 +291,18 @@ export function validateProject(input: unknown): Project {
 }
 export async function importBackup(file: File): Promise<Project> {
   if (file.name.toLowerCase().endsWith(".db")) return importSQLite(file);
-  const raw = JSON.parse(await file.text());
+  let raw: any;
+  if (file.name.toLowerCase().endsWith(".zip")) {
+    const { default: JSZip } = await import("jszip");
+    const zip = await JSZip.loadAsync(await file.arrayBuffer());
+    const schedulePath = Object.keys(zip.files).find(
+      (path) => !zip.files[path].dir && path.split("/").at(-1) === "排程与校验.json",
+    );
+    if (!schedulePath) throw new Error("ZIP 中未找到排程与校验.json");
+    raw = JSON.parse(await zip.file(schedulePath)!.async("string"));
+  } else {
+    raw = JSON.parse(await file.text());
+  }
   if (raw.format === "ztab" && raw.version !== 1)
     throw new Error("不支持此备份版本");
   if (Array.isArray(raw.draws) && Array.isArray(raw.teams) && !raw.project)
